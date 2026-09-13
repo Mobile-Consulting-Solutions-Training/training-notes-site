@@ -1,6 +1,6 @@
 ---
 title: Training 1 - Linux and Shell Scripting
-description: Unix/Linux background, Filesystem, Permissions, grep/awk/sed, and homework
+description: Unix/Linux background, Filesystem, Permissions, grep/awk/sed, Processes, cron, Shell Automation, and homework
 ---
 
 Teacher: Evan Flint
@@ -197,6 +197,22 @@ A. (Teacher's definition) pyenv is a tool for managing multiple Python versions 
 | Linux / Mac | github.com/pyenv/pyenv | The main version of pyenv |
 | Windows | github.com/pyenv-win/pyenv-win | Separate Windows-specific port - install via PowerShell (Administrator mode required, not cmd) |
 
+## Agent Generated Notes (from Class Recording): Using pyenv
+
+A. (From class recording) Demonstrated use case: running a script with the wrong Python version can produce a cryptic, hard-to-diagnose error even though the code "looks perfectly normal" - switching Python versions with pyenv resolved it immediately.
+
+| Command | What it does |
+|---|---|
+| `pyenv versions` | List Python versions currently installed via pyenv |
+| `pyenv install --list` | List all installable Python versions (from very old releases up through in-development versions) |
+| `pyenv global <version>` | Switch the active Python version (e.g. `pyenv global 3.10.12`) |
+| `python --version` | Confirm which version is currently active |
+
+Notes:
+- Without a version manager like pyenv, switching Python versions means fully uninstalling one version and installing another - slow and annoying compared to a single pyenv command.
+- Anaconda was explicitly recommended against as a Python distribution - it takes up a large amount of disk space and bundles a lot of tooling (mainly useful for data science/statistics) that most data engineers won't need; a lightweight standalone Python install (managed via pyenv) is preferable.
+- If you're on Windows and using WSL, install pyenv **twice** - once in Windows and once inside WSL - since Windows and Linux builds aren't interchangeable, and you'll likely want Python available in both environments.
+
 ---
 
 # Filesystem
@@ -345,6 +361,40 @@ Warning: `rm -rf` is one of the most dangerous commands in Linux - no confirmati
 
 ---
 
+## Agent Generated Notes (from Class Recording)
+
+Q. What does the terminal prompt actually show, and what does `~` mean?
+
+A. (From class recording) A typical prompt looks like `username@hostname:~$` - the part before the `@` is your username, the part after is the machine's hostname. The `~` (tilde) is shorthand for your home directory (`/home/<username>`) - it's not the same as the root directory. To type `~` on most keyboards, it's the key just below Escape, pressed with Shift.
+
+Q. What are the main top-level directories in the Linux filesystem, and what's each one for?
+
+A. (From class recording) Running `ls /` (the root directory) shows the main folders every Linux system organizes itself around:
+
+| Directory | Purpose |
+|---|---|
+| `/bin` | Core program binaries - the actual code behind many basic commands (e.g. `apt`, `apt-get`) lives here |
+| `/home` | Each user's personal directory (e.g. `/home/evan`) - equivalent to what `~` points to for that user |
+| `/mnt` | Where you mount external systems/drives (e.g. an external hard drive plugged into USB) |
+| `/usr` | A large amount of user-relevant software and libraries - e.g. this is typically where a Python installation and packages installed via `apt` end up (`/usr/lib`) |
+| `/opt` | Optional/third-party software installs - e.g. browser (Chrome, Brave) settings, cloud CLI tools |
+| `/snap` | Files managed by the `snap` package manager (separate from `apt`) |
+| `/sys` | Low-level kernel/system configuration - don't modify unless you know exactly what you're doing |
+| `/var` | Files that change over time - caches, backups, logs |
+| `/boot` | Bootloader files - what gets your computer from powered-off to a running OS. Don't mess with this directory |
+| `/etc` | Low-level system configuration files - e.g. `/etc/hosts` (maps hostnames to IP addresses, used for SSH shortcuts), security certs, `hosts.allow`/`hosts.deny` |
+| `/media` | Similar to `/mnt`, for removable media |
+| `/proc`, `/sbin` | Low-level system/process info and admin binaries - not typically something you'd browse day-to-day |
+| `/tmp` | Temporary files - safe to delete, cleared periodically |
+
+Note: `/bin` vs `/usr/bin` often look nearly identical in practice on modern systems.
+
+Q. How do I navigate relative to my current directory?
+
+A. (From class recording) `cd ..` moves up one directory level (to the parent). You can chain it with a path, e.g. `cd ../home` goes up one level then into `home`. A single dot `.` refers to the current directory - so `ls .` is equivalent to just `ls`.
+
+---
+
 # Permissions
 
 Q. Is file ownership separate from having read/write permission on a file?
@@ -402,6 +452,59 @@ cat locked.txt               # Works
 ```
 
 Note: there's a subtle distinction with deleting a file - deletion is primarily controlled by the permissions on the containing directory, not the file itself. So a `chmod 000 locked.txt` file can often still be deleted by its owner if they have sufficient permissions on the directory containing it.
+
+## Agent Generated Notes (from Class Recording)
+
+Q. How do I create and manage users and groups?
+
+A. (From class recording)
+
+| Command | What it does |
+|---|---|
+| `sudo adduser <name>` | Create a new user (interactively prompts for password and info) |
+| `id <name>` | Show a user's UID, GID, and group memberships |
+| `grep <name> /etc/passwd` | Look up a user's entry directly in the system's user database |
+| `sudo groupadd <group>` | Create a new group |
+| `sudo usermod -aG <group> <name>` | Add a user to a group (`-a` = append, don't remove existing groups; `-G` = supplementary groups) |
+| `groups <name>` | List which groups a user belongs to |
+| `sudo deluser <name>` | Delete a user |
+| `sudo groupdel <group>` | Delete a group |
+
+Note: always use `-aG` together when adding a user to a group with `usermod` - using `-G` alone without `-a` replaces all of a user's existing group memberships with just the one specified, which is rarely what you want.
+
+Q. What do the numeric chmod codes (like 600, 644, 777) actually mean?
+
+A. (From class recording) Each permission digit is a sum of: **4** = read, **2** = write, **1** = execute. Three digits represent owner / group / everyone else, in that order.
+
+| Code | Meaning |
+|---|---|
+| `600` | Owner: read+write. Group: none. Others: none |
+| `700` | Owner: read+write+execute. Group: none. Others: none |
+| `644` | Owner: read+write. Group: read only. Others: read only |
+| `640` | Owner: read+write. Group: read only. Others: none |
+| `777` | Everyone: read+write+execute - avoid this, it means anybody can read, write, AND execute the file |
+
+There's no way to intuit these codes from first principles - they just have to be memorized (or computed from the 4/2/1 rule above).
+
+Q. What's the symbolic (non-numeric) way to change permissions?
+
+A. (From class recording) Symbolic `chmod` uses a target (`u`=user/owner, `g`=group, `o`=others) plus `+` or `-` plus the permission letter (`r`/`w`/`x`):
+
+| Command | Effect |
+|---|---|
+| `chmod o-r file.txt` | Remove read access for "others" (everyone outside owner/group) |
+| `chmod g-w file.txt` | Remove write access for the group |
+| `chmod g+r file.txt` | Add read access for the group |
+| `chmod u+rw file.txt` | Add read+write access for the owner |
+| `chmod +x script.sh` | Add execute permission for everyone - the standard way to make a script runnable |
+
+Q. Why do I get "Permission denied" when running my own shell script with `./script.sh`?
+
+A. (From class recording) A newly created script file has read/write permission but not execute permission by default. Before `./script.sh` will run, you need to grant execute permission: `chmod +x script.sh`. This is a very common first-time gotcha with shell scripts.
+
+Q. What is `sudo su`, and why doesn't every user get sudo access?
+
+A. (From class recording) `sudo su` switches you into a persistent super-user session (rather than prefixing every single command with `sudo`) - press Ctrl+D to exit back to your normal user. Only users in the `sudo` group can use `sudo` at all - `sudo usermod -aG sudo <user>` grants that. This is deliberately restricted: on a shared/company system, giving every user unrestricted super-user power would let any single disgruntled or careless user do serious damage. In a real company, getting new software/packages installed on a shared system typically means going through a system administrator or admin team rather than just running `sudo` yourself.
 
 # grep / awk / sed
 
@@ -573,6 +676,127 @@ Given `customer_id=10023`, the conceptual regex `customer_id=([0-9]+)` looks lik
 The key idea: regex is the pattern language - Bash, grep, Python, sed, Spark, databases, IDEs, etc. are just different ways of applying that same language.
 
 Learning priority for beginners: `[0-9]`, `[A-Za-z]`, `.`, `*`, `+`, `^`, `$`, `{n}`, `[^...]`, groups, and `|` first - then practice them via `grep -E`, Bash `=~`, and Python's `re.search`/`re.findall`/`re.sub`.
+
+## Agent Generated Notes (from Class Recording): grep, awk, sed on real CSV data
+
+A. (From class recording) A practical walkthrough using an `employees.csv` file with columns `employee_id,name,department,city,salary,status`:
+
+**grep** - text search:
+```
+grep Engineering employees.csv     # every row in the Engineering department
+grep Inactive employees.csv        # every row with Inactive status
+```
+
+**awk** - parsing structured (row/column) data:
+```
+awk -F, '{print $2}' employees.csv          # print column 2 (name) for every row
+awk -F, '{print $1}' employees.csv          # print column 1 (employee_id)
+awk -F, '{print $4}' employees.csv          # print column 4 (city)
+awk -F, '{print $2","$4}' employees.csv     # print name and city together
+awk -F, '$3=="Engineering"' employees.csv   # print full rows where department = Engineering
+```
+`-F,` sets the delimiter (comma) - awk splits each line into fields (`$1`, `$2`, `$3`, ...) at every comma, similar to columns in a SQL table.
+
+**sed** - stream-oriented search and replace:
+```
+sed 's/Engineering/Technology/' employees.csv    # preview the replacement (does NOT modify the file)
+sed -i 's/Engineering/Technology/' employees.csv # -i actually modifies the file in place
+```
+Key distinction: without `-i`, `sed` only prints the transformed output to the terminal - the original file is untouched. Verify a `sed -i` change actually took effect by re-running `awk`/`grep` against the file afterward.
+
+Summary of what each tool is for: `grep` searches, `awk` parses/selects structured row-and-column data, `sed` performs search-and-replace transformations on a text stream.
+
+---
+
+# Processes
+
+Q. How do I see what processes are running, and stop one?
+
+A. (From class recording)
+
+| Command | What it does |
+|---|---|
+| `ps` | List processes running in the current terminal session |
+| `ps aux \| grep <name>` | Search all processes on the system for a name match |
+| `jobs` | List background jobs started from the current terminal (window-specific - won't show jobs from other terminal tabs) |
+| `<command> &` | Run a command in the background, freeing up the terminal |
+| `nohup <command> &` | Run a command in the background so it keeps running even if the terminal disconnects ("no hangup" - a term dating back to dial-up phone-line connections) |
+| `kill <PID>` | Terminate a process by its process ID |
+
+Example flow: start a background job (`uvicorn main:app &`), confirm it's running with `ps` or `jobs`, then `kill <PID>` to stop it and confirm with `ps` again that it's gone.
+
+Q. How do I check system resource usage (CPU, memory, disk)?
+
+A. (From class recording)
+
+| Command | What it does |
+|---|---|
+| `top` | Live view of running processes and resource usage (similar to Windows Task Manager) - press `q` to quit |
+| `htop` | Same idea as `top` but with a nicer visual interface (install via `sudo apt install htop`) |
+| `free` | Show memory (RAM) usage - total/used/free |
+| `df` | Show disk space usage per mounted filesystem |
+| `df \| grep <device>` | Filter disk usage to a specific drive (e.g. an NVMe drive) |
+
+Note: an NVMe drive is a data storage standard based on the same flash memory as an SSD/USB stick, but designed for a specific physical motherboard slot - not every motherboard has one.
+
+---
+
+# cron
+
+Q. What is cron, and how does its scheduling syntax work?
+
+A. (From class recording) Cron is a built-in Linux automation feature included in every distribution, used to run a command on a repeating schedule. Edit your scheduled jobs with `crontab -e`.
+
+The schedule syntax is 5 fields, in this order: **minute, hour, day (of month), month, weekday**. A `*` in any field means "every" value for that field.
+
+```
+* * * * *   command    # runs every single minute
+0 * * * *   command    # runs once every hour, at the :00 minute mark
+30 9 * * *  command    # runs every day at 9:30am
+30 9 * * 1  command    # runs every Monday at 9:30am (weekday is roughly 0-6)
+```
+
+Example used in class - append a line to a file every minute:
+```
+* * * * * echo "written from cron" >> /home/evan/crontest.txt
+```
+
+To temporarily disable a scheduled job without deleting it, comment it out with `#` at the start of the line inside `crontab -e`.
+
+Note: **Apache Airflow** (a much more full-featured automation/orchestration tool used in big data, with a web UI and step-based job tracking) uses this exact same 5-field cron syntax to schedule when a DAG/job runs - learning cron's syntax here directly transfers to scheduling Airflow jobs later in the course.
+
+---
+
+# Shell Automation & Operational Logs
+
+Q. What is a shell script, and how do I make one runnable?
+
+A. (From class recording) A shell script is just a text file containing a list of the same commands you'd type on the command line, executed in sequence, one after another. It starts with a "shebang" line telling the system which program should interpret it:
+
+```bash
+#!/bin/bash
+echo "Current user: $(whoami)"
+echo "Current date: $(date)"
+echo "Working directory: $(pwd)"
+```
+
+Before it can be run, it needs execute permission (see `chmod +x` above), then it's run with `./scriptname.sh` (the `.` means "current directory", `/` tells the shell to look for a file there).
+
+Practical use case: provisioning a brand-new server that only has Linux installed (no Python, no Spark, none of your dependencies) - a shell script can list every install/setup command needed (installing packages, cloning a git repo, setting environment variables) so the whole environment gets set up in one execute, rather than typing each command by hand.
+
+Q. How do I check whether a system service is running, and view its logs?
+
+A. (From class recording)
+
+| Command | What it does |
+|---|---|
+| `sudo systemctl status <service>` | Check whether a service (e.g. `ssh`, `docker`) is active/running, and since when |
+| `sudo systemctl start \| stop \| restart <service>` | Start, stop, or restart a service |
+| `sudo systemctl enable \| disable <service>` | Control whether a service auto-starts on system boot |
+| `systemctl list-units --type=service --state=running` | List all currently running services |
+| `sudo journalctl <service>` | View a service's logs - essential for diagnosing what went wrong when something fails |
+
+Note: paginated command output (from `systemctl status`, `journalctl`, etc.) can't be exited by typing - press the **`q`** key to return to the prompt.
 
 ---
 
