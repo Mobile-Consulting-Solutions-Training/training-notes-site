@@ -574,12 +574,6 @@ The key idea: regex is the pattern language - Bash, grep, Python, sed, Spark, da
 
 Learning priority for beginners: `[0-9]`, `[A-Za-z]`, `.`, `*`, `+`, `^`, `$`, `{n}`, `[^...]`, groups, and `|` first - then practice them via `grep -E`, Bash `=~`, and Python's `re.search`/`re.findall`/`re.sub`.
 
-# Processes
-
-# cron
-
-# Shell Automation & Operational Logs
-
 ---
 
 # Homework Assignment: Linux Users, Permissions, Text Processing & Processes
