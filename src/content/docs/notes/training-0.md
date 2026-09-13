@@ -973,3 +973,44 @@ A. (From class recording) Most data pipelines (and software generally) move thro
 
 Why CI/CD was invented: before it existed, deploying an update meant finding the time of day with the fewest active users, taking the whole system down, manually installing the new code, testing it, then bringing it back online - inconveniencing at least some users every time. CI/CD (which grew out of "extreme programming," an alternative to agile aimed at very frequent production deployments) solved this: push to `main`, the CI/CD pipeline runs, and the production server reloads the code without taking the system down - users may not even notice the update happened. A canary deployment (rolling out to a small subset of pods/servers before fully replacing the old version) is an optional extra safety layer on top of this, not a requirement of CI/CD itself.
 
+## What is "Big Data"? (The Actual Definition)
+
+Q. When does data become "big data"?
+
+A. (From class recording) Data becomes big when it is too large to be efficiently processed by a single computer. Different people will give different definitions, but this is the practical one to use.
+
+Expanded, with the scale examples Evan walked through:
+
+| Data size | Is it "big data"? | Why |
+|---|---|---|
+| A CSV file with ~1,000 lines | No (from a data engineering standpoint) | Might feel big to a human reading it, but a normal laptop processes it near-instantaneously - write a script, run it, done |
+| Gigabytes | Borderline | A normal laptop can still do it, but it starts taking real time - 30 minutes, an hour, maybe three hours for a script to finish |
+| Terabytes | Yes | Trying to process this on a laptop becomes a serious problem |
+| Petabytes (one step above terabytes) | Definitely yes | Requires distributed systems, full stop |
+
+The key insight: "big data" isn't about a fixed size threshold - it's about the point where a single machine can no longer process the data efficiently, which is exactly why distributed systems, clusters, and tools like Spark exist. Most of what modern data engineering is about is figuring out what kind of system can process a given amount of data, and how to make that processing as efficient as possible - which is why so much of the discipline is really about infrastructure (computer hardware or cloud-based substitutes for it), not just "working with data."
+
+## The Three Major Ways Data Gets Used in an Organization
+
+A. (From class recording) There are basically three major ways that data is used once a data engineer has made it available:
+
+| # | Use | Description | Data Engineer's role |
+|---|---|---|---|
+| 1 | Visualization | Maps, charts, dashboards - the kind of output seen in news broadcasts or business reporting (upward/downward trends, geographic breakdowns, etc.) | Lower-level expectation - a component of big data engineering, but not the major focus of this course, since it's less about infrastructure |
+| 2 | Machine learning models | Data is fed into a model as training input | The data engineer prepares/pipes the data and the training infrastructure - writing the model itself is generally the data scientist's job (though AI now makes writing simple models much easier for anyone) |
+| 3 | Enhancing LLMs (RAG) | Using an organization's own data to make an LLM able to answer questions it otherwise couldn't (a public model like ChatGPT has no knowledge of your company's internal data) | Building the data pipeline that feeds an LLM's retrieval system |
+
+Note on #3 - the "AI genie" example: suppose you run a website and want to ask an AI "what were our quarterly earnings for the past eight quarters?" A general-purpose LLM can't answer that because its training never saw that data. What you can do instead is feed your own data to the AI so it can answer questions grounded in that data - this is what a RAG (Retrieval-Augmented Generation) pipeline is for. LLMs can also be run locally/privately rather than communicating with a major provider, depending on an organization's needs.
+
+## How AI Has Changed the Data Space (and Where Agentic AI Fits)
+
+A. (From class recording, in response to a student question about agentic AI) Before AI became mainstream (~2019, when Evan started), data scientists were mostly statisticians - they took data and applied statistical methods to produce maps/charts/presentations so management could make decisions. That was the main way data added value to a business.
+
+Since AI, most of that "make charts and summaries" work can be done directly by an LLM. So a data scientist's output has shifted from "make the charts" toward "how do we use this data to train a model" and "how do we use this in a RAG pipeline" (making an LLM's knowledge include your organization's own data).
+
+Agentic AI specifically (an AI agent performing tasks on a regular, autonomous basis) has NOT penetrated the big data world as much as other AI advances, because:
+- Data is one of the most economically important assets many companies have, and letting an autonomous agent make consequential decisions with it (e.g. cloud deployment choices, how to distribute data across a cluster) isn't considered safe/trustworthy enough yet.
+- Data engineering involves a lot of interconnected moving parts and judgment calls that current agentic AI isn't reliable enough to be trusted with unsupervised.
+
+Career implication Evan gave: data engineers are likely to be among the last technical disciplines AI fully replaces, precisely because of that complexity. The more effectively you learn to direct/prompt AI now (rather than being replaced by developers who can), the more valuable you remain - since AI in its current form is a prompt-and-response system that still needs a knowledgeable human to guide it well, even as it continues to automate more of what "average" development work looks like today.
+
