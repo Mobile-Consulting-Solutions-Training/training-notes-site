@@ -1,0 +1,71 @@
+<svg width="800" height="500" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#031c2e"/>
+      <stop offset="100%" stop-color="#04395e"/>
+    </linearGradient>
+    <linearGradient id="stream" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="node-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bae6fd"/>
+      <stop offset="60%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="500" fill="url(#bg)"/>
+
+  <!-- soft cloud silhouette -->
+  <g opacity="0.15" fill="#7dd3fc">
+    <ellipse cx="620" cy="120" rx="140" ry="46"/>
+    <ellipse cx="700" cy="100" rx="80" ry="34"/>
+    <ellipse cx="560" cy="100" rx="70" ry="30"/>
+  </g>
+
+  <!-- server rack silhouettes -->
+  <g opacity="0.25" fill="#0ea5e9">
+    <rect x="60" y="330" width="70" height="120" rx="4"/>
+    <rect x="140" y="300" width="70" height="150" rx="4"/>
+    <rect x="220" y="350" width="70" height="100" rx="4"/>
+    <rect x="70" y="345" width="50" height="6"/>
+    <rect x="70" y="365" width="50" height="6"/>
+    <rect x="70" y="385" width="50" height="6"/>
+    <rect x="150" y="315" width="50" height="6"/>
+    <rect x="150" y="335" width="50" height="6"/>
+    <rect x="150" y="355" width="50" height="6"/>
+  </g>
+
+  <!-- data flow lines connecting nodes -->
+  <g stroke="url(#stream)" stroke-width="3" fill="none" opacity="0.8">
+    <path d="M 150 380 Q 300 250 420 220"/>
+    <path d="M 420 220 Q 520 190 630 230"/>
+    <path d="M 420 220 Q 470 320 560 360"/>
+    <path d="M 630 230 Q 680 300 720 380"/>
+    <path d="M 150 380 Q 250 420 380 400"/>
+    <path d="M 380 400 Q 480 420 560 360"/>
+  </g>
+
+  <!-- nodes -->
+  <g>
+    <circle cx="150" cy="380" r="34" fill="url(#node-glow)"/>
+    <circle cx="150" cy="380" r="10" fill="#e0f2fe"/>
+
+    <circle cx="420" cy="220" r="40" fill="url(#node-glow)"/>
+    <circle cx="420" cy="220" r="13" fill="#e0f2fe"/>
+
+    <circle cx="630" cy="230" r="30" fill="url(#node-glow)"/>
+    <circle cx="630" cy="230" r="9" fill="#e0f2fe"/>
+
+    <circle cx="560" cy="360" r="36" fill="url(#node-glow)"/>
+    <circle cx="560" cy="360" r="11" fill="#e0f2fe"/>
+
+    <circle cx="380" cy="400" r="26" fill="url(#node-glow)"/>
+    <circle cx="380" cy="400" r="8" fill="#e0f2fe"/>
+
+    <circle cx="720" cy="380" r="24" fill="url(#node-glow)"/>
+    <circle cx="720" cy="380" r="7" fill="#e0f2fe"/>
+  </g>
+</svg>

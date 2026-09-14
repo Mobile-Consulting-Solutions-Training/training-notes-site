@@ -9,10 +9,12 @@
 }
 
 :root[data-theme='light'] {
-	--sl-color-accent-low: #bae6fd;
+	/* accent-low is the icon badge background paired with a white glyph -
+	   must stay dark enough for WCAG contrast. #0369a1 gives ~5.9:1 against
+	   white (WCAG AA requires 3:1 for icons/UI, 4.5:1 for normal text). */
+	--sl-color-accent-low: #0369a1;
 	--sl-color-accent: #0284c7;
 	--sl-color-accent-high: #04395e;
-	--sl-color-black: #ffffff;
 }
 
 /* Slightly bolder headings so section titles pop more */
