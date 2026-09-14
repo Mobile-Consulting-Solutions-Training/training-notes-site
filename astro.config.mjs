@@ -9,6 +9,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'MCS Training Notes',
+			customCss: ['./src/styles/custom.css'],
 			social: [
 				{
 					icon: 'github',
@@ -18,15 +19,15 @@ export default defineConfig({
 			],
 			sidebar: [
 				{
-					label: 'Notes',
+					label: '📓 Notes',
 					items: [{ autogenerate: { directory: 'notes' } }],
 				},
 				{
-					label: 'Study Guides',
+					label: '📝 Study Guides',
 					items: [{ autogenerate: { directory: 'study-guide' } }],
 				},
 				{
-					label: 'Homework',
+					label: '✅ Homework',
 					items: [{ autogenerate: { directory: 'homework' } }],
 				},
 			],
