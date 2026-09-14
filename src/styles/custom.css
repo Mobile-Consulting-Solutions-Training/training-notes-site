@@ -1,34 +1,45 @@
-/* Vibrant tech blue/cyan theme for Starlight */
+/* Vibrant tech blue/cyan theme for Starlight
+ *
+ * Handles all three theme states so nothing breaks depending on the
+ * viewer's setup:
+ *   1. :root                                  -> dark (the default)
+ *   2. @media (prefers-color-scheme: light)    -> "system" theme + OS set to light
+ *   3. :root[data-theme='light']               -> user explicitly picked light
+ * (3) always wins over (2) because it's declared after it and is more specific.
+ */
 
 :root {
-	/* Dark mode (Starlight's default root palette) */
 	--sl-color-accent-low: #04395e;
 	--sl-color-accent: #0ea5e9;
 	--sl-color-accent-high: #bae6fd;
 	--sl-color-white: #ffffff;
 }
 
+/* accent-low doubles as the card-icon badge background (paired with a white
+   glyph) and as one end of the heading gradient (against the page background).
+   In light contexts it must stay dark enough for WCAG contrast:
+   #0369a1 gives ~5.9:1 against white (AA requires 3:1 for icons/UI, 4.5:1 for
+   normal text), and #04395e (used as accent-high here) gives ~12:1. */
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme='dark']) {
+		--sl-color-accent-low: #0369a1;
+		--sl-color-accent: #0284c7;
+		--sl-color-accent-high: #04395e;
+	}
+}
+
 :root[data-theme='light'] {
-	/* accent-low is the icon badge background paired with a white glyph -
-	   must stay dark enough for WCAG contrast. #0369a1 gives ~5.9:1 against
-	   white (WCAG AA requires 3:1 for icons/UI, 4.5:1 for normal text). */
 	--sl-color-accent-low: #0369a1;
 	--sl-color-accent: #0284c7;
 	--sl-color-accent-high: #04395e;
 }
 
-/* Slightly bolder headings so section titles pop more */
+/* Gradient headings so section titles pop more - reads the accent variables
+   above, which are already correct for whichever theme state is active, so
+   this one rule covers dark, system-light, and explicit-light. */
 .sl-markdown-content h1,
 .sl-markdown-content h2 {
 	background: linear-gradient(90deg, var(--sl-color-accent-high), var(--sl-color-accent));
-	-webkit-background-clip: text;
-	background-clip: text;
-	color: transparent;
-}
-
-:root[data-theme='light'] .sl-markdown-content h1,
-:root[data-theme='light'] .sl-markdown-content h2 {
-	background: linear-gradient(90deg, #0284c7, #0369a1);
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
