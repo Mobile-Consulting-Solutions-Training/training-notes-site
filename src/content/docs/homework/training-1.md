@@ -67,7 +67,7 @@ Complete each exercise from the Linux terminal. For each exercise, submit the co
 
     Do not disable or permanently modify an important system service.
 
-## Submission
+## Submission Format
 
 Submit a single text or Markdown file named `linux_homework_<your_name>.txt`.
 
