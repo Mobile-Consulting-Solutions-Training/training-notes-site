@@ -1,0 +1,38 @@
+/* Vibrant tech blue/cyan theme for Starlight */
+
+:root {
+	/* Dark mode (Starlight's default root palette) */
+	--sl-color-accent-low: #04395e;
+	--sl-color-accent: #0ea5e9;
+	--sl-color-accent-high: #bae6fd;
+	--sl-color-white: #ffffff;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #bae6fd;
+	--sl-color-accent: #0284c7;
+	--sl-color-accent-high: #04395e;
+	--sl-color-black: #ffffff;
+}
+
+/* Slightly bolder headings so section titles pop more */
+.sl-markdown-content h1,
+.sl-markdown-content h2 {
+	background: linear-gradient(90deg, var(--sl-color-accent-high), var(--sl-color-accent));
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+:root[data-theme='light'] .sl-markdown-content h1,
+:root[data-theme='light'] .sl-markdown-content h2 {
+	background: linear-gradient(90deg, #0284c7, #0369a1);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+/* Hero tagline gets a subtle glow to draw the eye on first load */
+.hero .tagline {
+	text-shadow: 0 0 30px rgba(14, 165, 233, 0.35);
+}
