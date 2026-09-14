@@ -25,6 +25,10 @@ export default defineConfig({
 					label: 'Study Guides',
 					items: [{ autogenerate: { directory: 'study-guide' } }],
 				},
+				{
+					label: 'Homework',
+					items: [{ autogenerate: { directory: 'homework' } }],
+				},
 			],
 		}),
 	],
