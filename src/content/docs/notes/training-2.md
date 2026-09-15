@@ -1023,3 +1023,174 @@ This is **"wide" format** - one row per department, one column per category, eas
 By default, grouping by a categorical column makes Pandas generate a group for **every possible category combination** - the full cross-product (5 departments x 4 bands = 20 groups) - even combinations that never actually occur in a single row (e.g. HR + "Very High"). That's wasted work, and current Pandas versions raise a `FutureWarning` about this default changing in an upcoming release.
 
 `observed=True` tells `groupby()` to only create groups for combinations that **actually appear** in the data, skipping the phantom ones. Since the true zeros are already being filled in afterward via `unstack(fill_value=0)`, there's no need for Pandas to manufacture the empty combinations itself - same correct final result, without the extra overhead or the warning.
+
+## `.value_counts()` - counting occurrences of each unique value
+
+**Docs:** [pandas.Series.value_counts — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.Series.value_counts.html)
+
+**What it does:** called on a single column (Series), it counts how many times each unique value appears and returns the results as a Series, already sorted from most to least common (descending frequency) by default.
+
+```python
+data_frame["department"].value_counts()
+# department
+# Sales      20
+# Finance    20
+# ...
+```
+
+**How it relates to `groupby().size()`:** functionally similar to `groupby("department").size()` from the salary-bands exercise, but `value_counts()` is a shortcut for the common case of counting one column's values - no need to spell out `groupby()` + `.size()` when there's only one column involved and you don't need a multi-column grid.
+
+## `.idxmax()` - finding which row/label holds the maximum value
+
+**Docs:** [pandas.Series.idxmax — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.Series.idxmax.html)
+
+**What it does:** returns the **label** (index entry) associated with the largest value in a Series - not the value itself.
+
+```python
+counts = pd.Series([4, 6, 2], index=["Sales", "Finance", "HR"])
+counts.idxmax()   # -> "Finance" (the label, not 6)
+counts.max()      # -> 6 (the value itself)
+```
+
+**Why both `.idxmax()` and `.max()` are often used together:** they answer two different questions - `.idxmax()` answers "*which* group/row has the largest value," `.max()` answers "*what is* that largest value." A sentence like "Department X has the most employees (N of them)" needs both pieces, pulled out programmatically instead of eyeballing the top row of a printed, sorted list.
+
+If multiple entries are tied for the maximum, `.idxmax()` returns the *first* one it encounters, not all of them.
+
+## `.rank()` - assigning each row a rank number within its group
+
+**Docs:** [pandas.Series.rank — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.Series.rank.html)
+
+**What it does:** computes a numeric rank (1 through N) for every value, based on where it falls relative to the others. Used after `groupby()`, it ranks values *within each group separately* rather than across the whole column.
+
+```python
+exercise5_df["salary_rank"] = (
+    exercise5_df
+    .groupby("department")["salary"]
+    .rank(method="min", ascending=False)
+    .astype(int)
+)
+```
+- `ascending=False` - the *highest* salary in each department gets rank 1 (default `ascending=True` would rank the smallest value as 1).
+- `.astype(int)` - `.rank()` returns decimals by default (e.g. `1.0`, `2.0`), since some tie-handling methods can produce fractional ranks. Converting to `int` is safe here because `method="min"` never actually produces a fraction.
+
+**Why `.rank()` and not just `.sort_values()`:** sorting only reorders *rows for display* - it never attaches a new stored value to each row saying "you are rank 2 in your group." `.rank()` actually computes and stores that number as real data, which matters when the requirement is "add a column" rather than "show me these rows in a certain order." You could reconstruct something similar with sorting plus `groupby().cumcount()`, but that reimplements `.rank()` by hand and still leaves tie-handling to you.
+
+**The `method` parameter - how ties are handled** (values `[4, 2, 4, 8]`, ranked ascending):
+
+| `method` | Result | Behavior |
+|---|---|---|
+| `"average"` (default) | `[2.5, 1, 2.5, 4]` | Tied values split the average of the ranks they'd occupy |
+| `"min"` | `[2, 1, 2, 4]` | Tied values all get the *lowest* rank they'd occupy; the next rank is skipped |
+| `"max"` | `[3, 1, 3, 4]` | Tied values all get the *highest* rank they'd occupy |
+| `"first"` | `[2, 1, 3, 4]` | Ties broken by order of appearance in the data (no ties in the output) |
+| `"dense"` | `[2, 1, 2, 3]` | Like `"min"`, but the next rank always increases by exactly 1 (no skipped numbers) |
+
+`method="min"` was the right choice for exercise 5: if two employees in the same department are tied for the highest salary, both should correctly show as rank 1 (not an arbitrary 1-and-2 split), and the next distinct salary becomes rank 3 - correctly reflecting that two people already hold the top spot.
+
+## `.merge()` - joining two DataFrames on a shared column
+
+**Docs:** [pandas.DataFrame.merge — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.merge.html)
+
+**What it does:** combines two DataFrames based on matching values in a shared column - the Pandas equivalent of a SQL `JOIN`.
+
+```python
+exercise6_df = data_frame.merge(department_info, on="department", how="left")
+```
+- `department_info` - the other DataFrame being joined in.
+- `on="department"` - the shared column both DataFrames have, used to match rows between them.
+- `how="left"` - the join type, controlling which rows survive when a match is missing.
+
+**The `how` parameter - join types (same concepts as SQL joins):**
+
+| `how` | Behavior |
+|---|---|
+| `"left"` | Keep every row from the left (calling) DataFrame; attach matching columns from the right wherever a match exists (SQL LEFT OUTER JOIN) |
+| `"right"` | Keep every row from the right DataFrame instead (SQL RIGHT OUTER JOIN) |
+| `"inner"` (default) | Keep only rows where the key exists in *both* DataFrames (SQL INNER JOIN) |
+| `"outer"` | Keep every row from *both* DataFrames, filling in missing pieces with `NaN` where there's no match (SQL FULL OUTER JOIN) |
+| `"cross"` | Every row of the left paired with every row of the right (cartesian product) - rarely what you want |
+
+`how="left"` was the right choice for exercise 6: the goal is "every employee record also contains their manager and office location" - meaning no employee row should ever be dropped just because of the join, even if (hypothetically) a department had no matching row in `department_info`. `"left"` guarantees the full employee list survives; `"inner"` could silently drop employees if a department name were ever missing or misspelled in one of the two tables.
+
+## `sort_values()` - reordering a DataFrame's rows
+
+**Docs:** [pandas.DataFrame.sort_values — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.sort_values.html)
+
+**What it does:** reorders the rows of a DataFrame based on the values in one or more columns. By default, sorts **ascending** (low to high).
+
+**Single column:**
+```python
+df.sort_values("salary")                    # ascending (default): lowest first
+df.sort_values("salary", ascending=False)   # descending: highest first
+```
+
+**Multiple columns (a primary key plus tie-breakers):**
+```python
+df.sort_values(["department", "salary"], ascending=[True, False])
+```
+The column list and the `ascending` list line up positionally - sort by `department` first (alphabetical, since `True`), and *within* rows that share the same department, break ties using `salary` (highest first, since `False`). Each column in the list can have its own independent direction.
+
+**Toy example** - sorting `[{dept: Sales, salary: 80000}, {dept: Engineering, salary: 90000}, {dept: Sales, salary: 95000}, {dept: Engineering, salary: 85000}]` by `["department", "salary"]` with `ascending=[True, False]`:
+```text
+department    salary
+Engineering   90000
+Engineering   85000
+Sales         95000
+Sales         80000
+```
+Engineering sorts before Sales (alphabetical), and within each department, the higher salary appears first (descending).
+
+## Standard deviation (statistics background for `.transform("std")`)
+
+Standard deviation measures how spread out a set of numbers is around their average. A *small* standard deviation means values cluster close to the mean; a *large* one means they're scattered widely above and below it.
+
+**How it's calculated, step by step**, for one group of numbers:
+1. Find the mean (average).
+2. For each value, find its deviation from the mean (can be positive or negative).
+3. Square each deviation (makes everything positive, and weights larger deviations more heavily).
+4. Average those squared deviations - this is called the **variance**.
+5. Take the square root of the variance - that's the standard deviation, back in the original units.
+
+**Example:** Department A salaries `[60000, 62000, 58000]` - all close together -> small standard deviation. Department B salaries `[40000, 60000, 100000]` - same rough average, but widely scattered -> much larger standard deviation, even with a similar mean.
+
+**Why "mean + 1 standard deviation" is a meaningful outlier threshold:** it's a standard statistical convention - for many real-world distributions, most values cluster within one standard deviation of the mean, so "more than one standard deviation above the mean" is a widely-used, non-arbitrary definition of "unusually high" relative to a specific group.
+
+**In Pandas**, `"std"` is just another built-in aggregation function name, usable anywhere `"mean"` or `"count"` are (inside `.agg()`, `.transform()`, or called directly as `.std()`) - the statistics are the interesting part here, not new Pandas syntax.
+
+## Named aggregation - multiple stats, multiple source columns, one `.agg()` call
+
+**Docs:** [Named aggregation — pandas user guide](https://pandas.pydata.org/docs/user_guide/groupby.html#named-aggregation)
+
+**What it does:** lets `.agg()` compute several differently-named stats from several different source columns in a single call, instead of building each stat as a separate Series and stitching them together with `to_frame()` + column assignment (the approach used in exercise 1).
+
+```python
+department_report = data_frame.groupby("department").agg(
+    employee_count=("employee_id", "count"),
+    average_salary=("salary", "mean"),
+    highest_salary=("salary", "max"),
+)
+```
+Each line follows the pattern `new_column_name = ("source_column", "function_name")` - the left side is a name you choose for the output column, the right side is a tuple of (which column to read from, which aggregation to apply). `active_employee_count=("active", "sum")` is a useful trick: summing a `True`/`False` column counts the `True` values, since Python treats `True` as `1` and `False` as `0` in arithmetic.
+
+## `.reset_index()` - turning a groupby's index back into a normal column
+
+**Docs:** [pandas.DataFrame.reset_index — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.reset_index.html)
+
+**What it does:** after any `groupby()`, the column grouped on (e.g. `department`) becomes the result's **index**, not an ordinary column - this has been true of every `groupby()` result throughout this training. `.reset_index()` converts that index back into a normal, selectable column (and replaces the index with plain default row numbers 0, 1, 2...).
+
+**Why it matters:** operations like `.merge()` join on regular *columns*, not on the index. If `department` is still sitting as the index after a `groupby()`, `.merge(..., on="department")` won't find it - `.reset_index()` needs to run first so `department` is a real column again.
+
+## `.loc[]` - selecting rows by label
+
+**Docs:** [pandas.DataFrame.loc — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.loc.html)
+
+**What it does:** selects rows (and optionally columns) by their **label** (the index value), not by their position in the DataFrame.
+
+```python
+idx_of_max_salary = data_frame.groupby("department")["salary"].idxmax()
+highest_paid_names = data_frame.loc[idx_of_max_salary, ["department", "name"]]
+```
+`idx_of_max_salary` is a collection of specific row labels - one per department, each pointing at that department's highest-salary row (from `.idxmax()`, grouped). `.loc[idx_of_max_salary, ["department", "name"]]` jumps directly to exactly those rows and pulls out just the `department` and `name` columns from each one - turning "the row label of the maximum" into "the actual name sitting at that row."
+
+**`.loc[]` vs `.iloc[]`** (not used in this homework, but worth knowing the distinction): `.loc[]` selects by label/index value; `.iloc[]` selects by integer position (0, 1, 2...) regardless of what the labels actually are. They can give different results whenever a DataFrame's index isn't just a simple 0,1,2... sequence - such as right after using `.idxmax()` results, or after filtering rows (which keeps the original row labels rather than renumbering them).
+
