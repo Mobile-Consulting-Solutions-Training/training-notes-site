@@ -14,23 +14,35 @@ hero:
       link: /training-notes-site/study-guide/day-0/
       icon: document
       variant: minimal
+    - text: Homework
+      link: /training-notes-site/homework/training-1/
+      icon: approve-check-circle
+      variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 ## What's here
 
 <CardGrid stagger>
-	<Card title="Daily Notes" icon="pencil">
-		Detailed Q&A-style notes for each training day - teacher's definitions, expanded explanations, and comparison tables.
-	</Card>
-	<Card title="Study Guides" icon="open-book">
-		Condensed per-day summaries, cheat sheets, and flashcards for quick review and active recall practice.
-	</Card>
-	<Card title="Course Roadmap" icon="rocket">
-		The full 45-day syllabus, mapped against each day's notes file.
-	</Card>
-	<Card title="Homework" icon="approve-check-circle">
-		Each day's assignment plus the completed submission - commands, output, and explanations.
-	</Card>
+	<LinkCard
+		title="Daily Notes"
+		description="Detailed Q&A-style notes for each training day - teacher's definitions, expanded explanations, and comparison tables."
+		href="/training-notes-site/notes/training-0/"
+	/>
+	<LinkCard
+		title="Study Guides"
+		description="Condensed per-day summaries, cheat sheets, and flashcards for quick review and active recall practice."
+		href="/training-notes-site/study-guide/day-0/"
+	/>
+	<LinkCard
+		title="Course Roadmap"
+		description="The full 45-day syllabus, mapped against each day's notes file."
+		href="/training-notes-site/notes/course-roadmap/"
+	/>
+	<LinkCard
+		title="Homework"
+		description="Each day's assignment plus the completed submission - commands, output, and explanations."
+		href="/training-notes-site/homework/training-1/"
+	/>
 </CardGrid>
