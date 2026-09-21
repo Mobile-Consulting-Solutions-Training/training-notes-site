@@ -13,6 +13,7 @@ Coverage: Filesystem, permissions, grep/awk/sed, processes, cron, shell automati
 | Video | Purpose | Link |
 |---|---|---|
 | 60 Linux Commands you NEED to know (in 10 minutes) | Rapid overview of 60 essential Linux terminal commands - good quick-reference companion to the Filesystem/Permissions/grep-awk-sed sections below | https://www.youtube.com/watch?v=gd7BXuUQ91w |
+| Run an Ubuntu Image in Docker (Step-by-Step) | Walkthrough of running an Ubuntu container in Docker - review for recreating the container environment used for the homework (see homework page for the systemd-enabled version needed for systemctl/journalctl) | https://www.youtube.com/watch?v=i-QbVnUquxU |
 
 ---
 
@@ -797,3 +798,312 @@ A. (From class recording)
 | `sudo journalctl <service>` | View a service's logs - essential for diagnosing what went wrong when something fails |
 
 Note: paginated command output (from `systemctl status`, `journalctl`, etc.) can't be exited by typing - press the **`q`** key to return to the prompt.
+
+---
+
+# curl
+
+*(Came up later, outside this lesson's original session - added here since it's a core Linux/terminal command, same category as the tools above.)*
+
+Q. What is `curl`, and what is it used for?
+
+A. `curl` is a command-line tool for transferring data to/from a URL - most commonly used to make HTTP requests (the same kind a web browser makes) directly from the terminal, without any GUI.
+
+**Basic usage:**
+```bash
+curl https://example.com                    # GET request, prints the response body to the terminal
+curl -I https://example.com                 # HEAD request - headers only, no body (quick status check)
+curl -o output.html https://example.com     # save the response to a file instead of printing it
+curl -L https://example.com                 # follow redirects (curl does NOT follow them by default)
+curl -s https://example.com                 # "silent" - suppress the progress meter, just show output
+```
+
+**Making other kinds of requests:**
+```bash
+curl -X POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alex", "role": "student"}'
+```
+| Flag | Meaning |
+|---|---|
+| `-X POST` | Sets the HTTP method (`GET` is the default if omitted) - also `PUT`, `DELETE`, `PATCH`, etc. |
+| `-H "header: value"` | Adds a request header - `Content-Type`, `Authorization` (API keys/tokens), etc. Can be repeated for multiple headers |
+| `-d '...'` | Sends data in the request body (commonly JSON for APIs) |
+| `-o <file>` | Writes the response to a file instead of stdout |
+| `-I` | Fetch headers only (HEAD request) - a fast way to check if a URL is up without downloading the whole response |
+| `-L` | Follow HTTP redirects (3xx responses) automatically |
+| `-s` / `-v` | Silent mode (hide progress bar) vs verbose mode (show the full request/response, including headers - useful for debugging) |
+
+**Why this matters for data engineering:** `curl` is the everyday tool for testing an API endpoint before writing real code against it, checking whether a service is actually reachable/healthy (`curl -I` against a health-check URL), manually triggering a webhook, or quickly downloading a file from a URL onto a server that has no browser. It's also exactly the tool used earlier in this training-notes-site's own deployment workflow - verifying a GitHub Pages URL returns `HTTP 200` after a deploy is just `curl -s -o /dev/null -w "HTTP %{http_code}\n" <url>`.
+
+---
+
+# Vim
+
+*(Shared by the teacher - a practical cheat sheet, same category as the other terminal tools above.)*
+
+Vim has different **modes** - the same key does different things depending on which mode you're in. This is the single biggest thing that trips up newcomers: pressing a letter key does nothing visible until you understand which mode you're in.
+
+## Modes
+
+| Command | Action |
+|---|---|
+| `i` | Insert before cursor |
+| `a` | Insert after cursor |
+| `I` | Insert at beginning of line |
+| `A` | Insert at end of line |
+| `o` | Create new line below and enter insert mode |
+| `O` | Create new line above |
+| `Esc` | Return to Normal mode |
+| `v` | Visual selection mode |
+| `V` | Select entire lines |
+| `Ctrl+v` | Visual block mode |
+| `:` | Command-line mode |
+
+## Moving Around
+
+| Command | Action |
+|---|---|
+| `h` | Left |
+| `j` | Down |
+| `k` | Up |
+| `l` | Right |
+| `w` | Next word |
+| `b` | Previous word |
+| `e` | End of word |
+| `0` | Beginning of line |
+| `^` | First non-whitespace character |
+| `$` | End of line |
+| `gg` | Beginning of file |
+| `G` | End of file |
+| `10G` | Go to line 10 |
+| `Ctrl+f` | Page forward |
+| `Ctrl+b` | Page backward |
+| `Ctrl+d` | Half-page down |
+| `Ctrl+u` | Half-page up |
+
+## Editing
+
+| Command | Action |
+|---|---|
+| `x` | Delete character |
+| `dd` | Delete current line |
+| `5dd` | Delete 5 lines |
+| `dw` | Delete word |
+| `d$` | Delete to end of line |
+| `D` | Delete to end of line |
+| `cc` | Replace entire line |
+| `cw` | Replace word |
+| `r` | Replace one character |
+| `R` | Enter replace mode |
+| `J` | Join current line with next line |
+| `u` | Undo |
+| `Ctrl+r` | Redo |
+| `.` | Repeat last change |
+
+**The key concept: commands combine an operation + a movement.** Once this clicks, most of Vim's editing commands stop needing to be memorized individually - they're just an operation letter followed by however far you want it to reach:
+```text
+d + w  -> delete word
+d + $  -> delete to end of line
+d + G  -> delete to end of file
+c + w  -> change word
+y + w  -> copy word
+```
+
+## Copy, Cut, and Paste
+
+Vim calls copying **yanking**.
+
+| Command | Action |
+|---|---|
+| `yy` | Copy/yank current line |
+| `5yy` | Copy 5 lines |
+| `yw` | Copy word |
+| `y$` | Copy to end of line |
+| `dd` | Cut/delete line |
+| `p` | Paste after/below cursor |
+| `P` | Paste before/above cursor |
+
+Example - `yy` then `p` duplicates the current line.
+
+## Searching
+
+| Command | Action |
+|---|---|
+| `/hello` | Search forward for `hello` |
+| `?hello` | Search backward |
+| `n` | Next match |
+| `N` | Previous match |
+| `*` | Search for word under cursor |
+| `#` | Search backward for word under cursor |
+
+## Find and Replace
+
+```text
+:s/old/new/         # replace the first occurrence on the current line
+:s/old/new/g        # replace every occurrence on the current line
+:%s/old/new/g        # replace throughout the entire file
+:%s/old/new/gc       # same, but ask for confirmation on each one
+```
+
+## Saving and Quitting
+
+These are the most important commands for beginners:
+
+| Command | Action |
+|---|---|
+| `:w` | Save |
+| `:q` | Quit |
+| `:wq` | Save and quit |
+| `:x` | Save and quit |
+| `ZZ` | Save and quit |
+| `:q!` | Quit without saving |
+| `:w filename` | Save as another filename |
+| `:wq!` | Force save and quit |
+
+The classic "I'm trapped in Vim" escape sequence: `Esc`, then `:q!`, then `Enter`.
+
+## Files
+
+```text
+:e filename     # open another file
+:w filename     # write to another file
+:ls             # list open buffers
+:bn             # next buffer
+:bp             # previous buffer
+:bd             # close current buffer
+```
+
+## Line Numbers and Settings
+
+```text
+:set number           # show line numbers
+:set nonumber          # hide them
+:set relativenumber    # relative line numbers
+:syntax on              # enable syntax highlighting
+:set hlsearch           # enable search highlighting
+:nohlsearch             # remove current search highlighting
+```
+
+## Running Shell Commands
+
+From inside Vim:
+```text
+:!ls
+:!git status
+```
+Or temporarily open a full shell with `:shell`, and return to Vim by typing `exit`.
+
+## The 15 Commands to Learn First
+
+For anyone who only needs enough Vim to survive editing configuration files on a Linux server:
+
+```text
+i           insert
+Esc         normal mode
+
+h j k l     move
+gg          top
+G           bottom
+
+dd          delete line
+yy          copy line
+p           paste
+u           undo
+
+/text       search
+
+:w          save
+:q          quit
+:wq         save + quit
+:q!         quit without saving
+```
+
+These commands are enough to handle the vast majority of situations where a data engineer unexpectedly gets dropped into Vim while working on a Linux server, Git commit, Docker host, or cloud VM.
+
+---
+
+# Homework Assignment: Linux Users, Permissions, Text Processing & Processes
+
+## Objective
+
+Practice the Linux commands covered in class, including user management, file permissions, `grep`, `awk`, `sed`, shell scripting, process management, and `systemctl`.
+
+Complete each exercise from the Linux terminal. For each exercise, submit the commands used and the resulting terminal output.
+
+## Exercises
+
+1. **Create and manage a user**
+   Create a new Linux user named `data_student`. Verify that the user exists using an appropriate command. Create a group named `data_team` and add `data_student` to that group. Display the user's UID, GID, and group memberships.
+
+2. **Practice file permissions**
+   Create a file named `confidential.txt` containing at least one line of text. Change its permissions so that the owner can read and write it, the group can only read it, and everyone else has no permissions. Display the resulting permissions with `ls -l`. Do this using numeric `chmod` notation.
+
+3. **Practice symbolic `chmod`**
+   Create a shell script named `hello.sh` that prints `Hello from Linux!`. Attempt to execute it before giving it execute permission. Then use symbolic `chmod` notation to give the owner execute permission and successfully run the script.
+
+4. **Search data with `grep`**
+   Create a file called `application.log` containing at least 10 lines. At least three lines should contain `ERROR`, two should contain `WARNING`, and the others should contain `INFO`. Use `grep` to:
+   - Find all `ERROR` lines.
+   - Find both `ERROR` and `WARNING` lines using one command.
+   - Count the number of lines containing `ERROR`.
+
+5. **Process CSV data with `awk`**
+   Create `employees.csv` with this structure and at least six employees:
+   ```
+   id,name,department,salary
+   1,Alice,Engineering,95000
+   2,Bob,Sales,72000
+   ```
+   Use `awk` to display only employee names and salaries. Then use another `awk` command to display only employees earning more than $80,000.
+
+6. **Transform data with `sed`**
+   Using your `employees.csv` file, use `sed` to replace every occurrence of `Engineering` with `Technology`. First display the transformed data without changing the original file. Then create a backup and use `sed` to make the change in the actual file.
+
+7. **Create a system-information shell script**
+   Create a script named `system_report.sh` that prints:
+   - Current username
+   - Current date and time
+   - Current working directory
+   - Available disk space
+   - Memory usage
+   - System uptime
+
+   Give the script appropriate execute permissions and run it using `./system_report.sh`.
+
+8. **Investigate running processes**
+   Start the following process in the background: `sleep 500 &`. Find its PID using `ps` or `pgrep`. Verify that it is running, terminate it using `kill`, and then demonstrate that the process no longer exists.
+
+9. **Foreground and background jobs**
+   Start `sleep 1000`. Suspend the process using the appropriate keyboard shortcut. Use `jobs` to display it, resume it in the background, use `jobs` again to verify its status, bring it back to the foreground, and finally terminate it.
+
+10. **Investigate a system service**
+    Choose an existing systemd service on your machine, such as `ssh`, `cron`, or `docker`. Use `systemctl` to determine:
+    - Whether the service is running.
+    - Whether it is enabled at boot.
+    - The service's main PID, if running.
+
+    Then use `journalctl` to display the most recent 10 log entries for that service.
+
+    Do not disable or permanently modify an important system service.
+
+## Submission
+
+Submit a single text or Markdown file named `linux_homework_<your_name>.txt`.
+
+For each exercise include:
+```
+Exercise 1
+
+Commands:
+<commands you used>
+
+Output:
+<relevant terminal output>
+
+Explanation:
+<1-3 sentences explaining what the commands did>
+```
+
+The goal is not simply to get the expected output. You should be able to explain why the command worked and what its important options mean.
+

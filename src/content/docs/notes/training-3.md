@@ -336,3 +336,197 @@ Annotated tags are generally preferred for actual releases, since they carry met
 **CHANGELOG basics:** a `CHANGELOG.md` file in the repository root listing what changed in each version, newest first, usually grouped under headings like "Added," "Changed," and "Fixed." It gives anyone upgrading (or a future teammate) a human-readable summary of what happened release to release, without having to read raw commit history or diff two tags against each other.
 
 **How this connects to the rest of the pipeline:** a `release/*` branch (from Branching) is where final testing and bug-fixing for an upcoming version happens; once it's ready, it merges into `main`, gets tagged with its SemVer number, and - per the CI/CD three-environments concept from `Training 0.md` - that tagged commit is what actually gets deployed through Testing/QA and out to Production, with the tag serving as the permanent record of exactly which snapshot of the code is live.
+
+# CI/CD Pipeline Stages
+
+Q. What are the standard stages a CI/CD pipeline runs through?
+
+A. (Shared by the teacher) The typical sequence, in order, from a push to a deployable result:
+
+| Stage | What it does |
+|---|---|
+| Checkout | Pulls the source code from the repository at the specific commit being tested/built |
+| Compile/Build | Turns source into a runnable form - actual compilation for compiled languages, or dependency install/packaging/image build for interpreted ones |
+| Lint | Automated style/quality checks (formatting, unused imports, obvious code smells) |
+| Unit Test | Tests small, isolated pieces of code (one function, one class) with no real external systems involved |
+| Integration Test | Tests multiple pieces working together (real/test database, service-to-service calls) - catches what isolated unit tests can't |
+| Security Scan | Automated scanning for known vulnerabilities in the code itself and in third-party dependencies |
+| Artifact Creation | Packages the validated build into something deployable (Docker image, `.jar`/`.whl`, binary) and stores it for the deploy step to use |
+
+**Why this exact order:** cheap/fast checks run before expensive/slow ones, so the pipeline fails fast - there's no point running a 10-minute integration test suite against code with a linting error. This sequence is the concrete mechanism behind "protected branches require passing CI before merge" from the Repository Discipline section above - "CI" specifically means this stage sequence running automatically against every PR.
+
+Q. How do you actually write a test in Python, for the Unit Test / Integration Test stages above?
+
+A. Two main tools: `unittest` (Python's built-in standard library module, no install needed) and `pytest` (a third-party tool, `pip install pytest`, and the far more widely used option today - this is what the Jenkinsfile example above used).
+
+A function to test:
+```python
+def add(a, b):
+    return a + b
+```
+
+**With `pytest`** - function-based, plain `assert` statements:
+```python
+# test_math_utils.py
+from math_utils import add
+
+def test_add_positive_numbers():
+    assert add(2, 3) == 5
+
+def test_add_negative_numbers():
+    assert add(-1, -1) == -2
+
+def test_add_zero():
+    assert add(5, 0) == 5
+```
+```bash
+pytest              # auto-discovers and runs every test_*.py file in the project
+pytest -v           # verbose - shows each test's name and pass/fail individually
+```
+
+**With `unittest`** - class-based, needs a class inheriting from `unittest.TestCase`:
+```python
+import unittest
+from math_utils import add
+
+class TestAdd(unittest.TestCase):
+    def test_add_positive_numbers(self):
+        self.assertEqual(add(2, 3), 5)
+
+    def test_add_negative_numbers(self):
+        self.assertEqual(add(-1, -1), -2)
+
+if __name__ == "__main__":
+    unittest.main()
+```
+Run with `python -m unittest test_math_utils.py`.
+
+**Naming conventions that let test runners auto-discover tests:** files named `test_*.py` or `*_test.py`, functions starting with `test_`, classes starting with `Test` - both tools rely on this naming pattern to find and run tests automatically, without them needing to be listed anywhere by hand.
+
+**Unit vs integration, in concrete code terms:** a unit test calls something like `add()` directly, with no outside dependencies involved at all. An integration test instead calls something like `save_user_to_database(user)` and checks that a real (or test) database was actually updated correctly - verifying multiple real pieces work together, which is exactly what an isolated unit test can't catch.
+
+# CI/CD Tooling: Jenkins
+
+Q. What is Jenkins, and what is a Jenkinsfile?
+
+A. (Shared by the teacher) Jenkins is one of the oldest and most widely used open-source automation servers for building CI/CD pipelines - it watches a repository, and automatically runs a defined sequence of steps (like the stages above) whenever code changes.
+
+**Architecture - Controller and Agents:**
+
+| Component | Role |
+|---|---|
+| Controller (formerly "master") | The central Jenkins server - schedules jobs, serves the web UI, coordinates everything, but doesn't necessarily run the actual build work itself |
+| Agent (formerly "slave") | A separate machine/process that actually executes a pipeline's steps - lets heavy build/test work run on dedicated hardware, and lets multiple pipelines run in parallel across different agents |
+
+This controller/agent split mirrors the Spark Driver/Executor pattern from `Training 0.md` - one coordinator, multiple workers actually doing the work - the same "one brain, many hands" shape shows up across a lot of distributed tooling.
+
+**The Jenkinsfile:** a text file, typically named `Jenkinsfile`, checked into the root of the repository itself - it defines the entire pipeline **as code**, version-controlled right alongside the source it builds. This matters for the same reason `.gitignore` and configuration files belong in the repo (Repository Discipline, above): the pipeline definition changes and gets reviewed through the same PR process as everything else, rather than living as fragile, undocumented clicks in a web UI.
+
+**What language is a Jenkinsfile written in?** Groovy - a JVM-based scripting language (same broad family as how Spark/Scala run on the JVM). Both pipeline styles below are Groovy underneath: Declarative restricts you to a structured template (`pipeline { stages { ... } }`); Scripted allows full, unrestricted Groovy code (real variables, loops, conditionals).
+
+**What language(s) can the actual build/test commands be in?** Any language at all - this is a separate question from what the Jenkinsfile itself is written in. Inside a `steps { }` block, `sh '...'` (Linux/Mac) or `bat '...'` (Windows) just runs a shell command, exactly like typing it into a terminal. Jenkins doesn't know or care whether that command runs Python (`pytest`), Java (`mvn test`), Node (`npm test`), or anything else - the Jenkinsfile is purely an orchestrator calling out to whatever tools the project already uses. This is why the same Jenkins setup can build a Python data pipeline, a Java backend, and a JavaScript frontend, each with fundamentally the same shape of Jenkinsfile.
+
+**Declarative vs Scripted syntax** - two ways to write a Jenkinsfile:
+
+| | Declarative | Scripted |
+|---|---|---|
+| Structure | Fixed, structured format (`pipeline { stages { ... } }`) | Full Groovy scripting - much more flexible |
+| Readability | Easier to read and write, especially for straightforward pipelines | Steeper learning curve, more verbose |
+| Flexibility | Covers most common cases well; less flexible for unusual logic | Can express arbitrarily complex custom logic |
+| Recommended for | Most pipelines, especially when starting out | Complex, non-standard build/deploy logic |
+
+**Example Jenkinsfile (declarative), mapping directly onto the pipeline stages above:**
+```groovy
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'pip install -r requirements.txt'
+            }
+        }
+        stage('Lint') {
+            steps {
+                sh 'ruff check .'
+            }
+        }
+        stage('Unit Test') {
+            steps {
+                sh 'pytest tests/unit'
+            }
+        }
+        stage('Integration Test') {
+            steps {
+                sh 'pytest tests/integration'
+            }
+        }
+        stage('Security Scan') {
+            steps {
+                sh 'pip-audit'
+            }
+        }
+        stage('Artifact Creation') {
+            steps {
+                sh 'docker build -t myapp:latest .'
+            }
+        }
+    }
+}
+```
+`agent any` tells Jenkins this pipeline can run on any available agent (rather than requiring a specific labeled one). Each `stage(...)` block corresponds to one of the pipeline stages already covered, and `steps { sh '...' }` runs an actual shell command - Jenkins itself doesn't know how to lint or test Python code, it just orchestrates running whatever commands the project actually uses.
+
+**Triggers - how a pipeline actually starts:**
+
+| Trigger type | How it works |
+|---|---|
+| Webhook | The Git hosting platform (GitHub/GitLab/Bitbucket) notifies Jenkins immediately when a push/PR happens - fastest, most common in modern setups |
+| Poll SCM | Jenkins periodically checks the repository for new commits itself, on a schedule (uses the same cron syntax from `Training 1.md`) - a fallback when webhooks aren't available (e.g. Jenkins isn't reachable from the internet) |
+| Scheduled (cron) | Runs on a fixed schedule regardless of whether anything changed - e.g. a nightly full test suite |
+| Manual | A person clicks "Build Now" in the Jenkins UI |
+
+**Plugins:** most of Jenkins' real functionality (Git integration, Docker support, Slack/email notifications, cloud provider integrations) comes from an extensive plugin ecosystem rather than Jenkins' own core - part of why Jenkins is often described as extremely flexible but also as sometimes needing significant setup/maintenance work compared to newer, more opinionated CI/CD tools built directly into a hosting platform (GitHub Actions, GitLab CI).
+
+# Docker Hub & Image Deployment
+
+Q. What is Docker Hub, and how do you deploy an image to it?
+
+A. Docker Hub is a **registry service for Docker images** - conceptually like GitHub, but it stores built, runnable container images instead of source code. It's the default registry `docker pull`/`docker push` use unless configured otherwise.
+
+**Key concepts:**
+
+| Term | Meaning |
+|---|---|
+| Repository | A named collection of an image's versions, in the form `username/repo-name` (e.g. `alexjackson/my-etl-app`) |
+| Tag | A label on a specific version of an image, e.g. `my-etl-app:1.2.0` or `my-etl-app:latest` - `latest` is just a naming convention, not a guaranteed special value |
+| Public vs private | Public repos are pullable by anyone; Docker Hub's free tier includes unlimited public repos but only one private repo |
+
+**Deploying (pushing) an image:**
+```bash
+docker login                                          # authenticate with your Docker Hub account
+
+docker build -t alexjackson/my-etl-app:1.0.0 .        # build the image, tagged as username/repo:tag
+
+docker push alexjackson/my-etl-app:1.0.0              # upload that tagged image to Docker Hub
+```
+If an image is already built under a different name, re-tag it rather than rebuilding:
+```bash
+docker tag my-etl-app:local alexjackson/my-etl-app:1.0.0
+docker push alexjackson/my-etl-app:1.0.0
+```
+
+**Pulling and running it anywhere else:**
+```bash
+docker pull alexjackson/my-etl-app:1.0.0
+docker run alexjackson/my-etl-app:1.0.0
+```
+Any machine with Docker installed can run the exact same environment with no manual dependency/OS setup - the entire point of shipping a container instead of raw source code.
+
+**How this connects to the Jenkinsfile example above:** the `Artifact Creation` stage (`docker build -t myapp:latest .`) is only step one. A real pipeline typically adds a following "Publish"/"Push" stage running `docker push` to actually land that image in a registry like Docker Hub - then a deploy step on the production server runs `docker pull` and restarts the container with the new image. This is also where SemVer (from Release Basics) shows up in practice - tagging images `1.2.0`, `1.2.1`, etc. to match the corresponding Git release tag.
+
+**Alternatives to Docker Hub** (same `build -> tag -> push -> pull -> run` workflow, different host): GitHub Container Registry (`ghcr.io`), AWS ECR, Google Artifact Registry, GitLab Container Registry - companies often pick one of these instead of Docker Hub for private, cloud-integrated image storage.
