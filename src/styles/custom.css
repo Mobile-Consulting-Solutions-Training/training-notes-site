@@ -25,6 +25,13 @@
 		--sl-color-accent-low: #0369a1;
 		--sl-color-accent: #0284c7;
 		--sl-color-accent-high: #04395e;
+		/* --sl-color-white is used by Starlight itself for h3-h6, table headers,
+		   link-hover, and <details> summary text - it's a "high-contrast text"
+		   variable, not literally always white. Our :root above pins it to real
+		   white (needed for the dark-mode card-icon glyph), so it must be reset
+		   back to a dark, readable value here for light mode specifically -
+		   otherwise all of the above render as invisible white-on-white text. */
+		--sl-color-white: hsl(224, 10%, 10%);
 	}
 }
 
@@ -32,6 +39,7 @@
 	--sl-color-accent-low: #0369a1;
 	--sl-color-accent: #0284c7;
 	--sl-color-accent-high: #04395e;
+	--sl-color-white: hsl(224, 10%, 10%);
 }
 
 /* Gradient headings so section titles pop more - reads the accent variables
