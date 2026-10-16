@@ -201,7 +201,9 @@ Expanded: the CAP Theorem states that a distributed system can only fully guaran
 | **CP** (Consistency + Partition Tolerance) | Refuses/delays requests to affected nodes rather than risk returning stale data | Systems where correctness matters more than uptime (e.g. financial transactions) |
 | **AP** (Availability + Partition Tolerance) | Keeps answering requests from every node, even if some return slightly stale data until the partition heals | Systems where staying up matters more than perfect freshness (e.g. social media feeds, shopping carts) |
 
-This is the theoretical backbone behind why different distributed systems (Zookeeper/HDFS lean CP; many NoSQL databases like Cassandra/DynamoDB lean AP) are built with fundamentally different trade-offs, and it'll likely resurface directly in `Training 7.md`'s Distributed Systems + HDFS material and again whenever NoSQL/MongoDB (`Training 14.md`) comes up.
+This is the theoretical backbone behind why different distributed systems are built with fundamentally different trade-offs, and it'll likely resurface directly in `Training 7.md`'s Distributed Systems + HDFS material and again whenever NoSQL/MongoDB (`Training 14.md`) comes up.
+
+**Correction - HDFS specifically chose AP, not CP.** Teacher's definition (directly, in response to a student question about whether HDFS keeps all its replicas in sync instantly): "HDFS is not what we call strongly consistent. Instead, HDFS is highly available... Hadoop, as a system, chose the availability side of that. So Hadoop systems can be highly available, but they do not guarantee strong consistency." Since partition tolerance isn't optional for a distributed file system, this means HDFS lands on the **AP** side of the CP-vs-AP choice - when a file is updated, all of its replicas will eventually be made consistent, but not in the exact same instant the change is made. (An earlier version of this note incorrectly guessed HDFS leans CP - this replaces that.)
 
 ---
 
@@ -422,6 +424,8 @@ Expanded: where partitioning splits a table by the literal value of a column (cr
 
 **Terminology note worth double-checking:** the teacher's phrasing ("not done at the file level") is worth confirming in context - in most standard Hive/Spark documentation, bucketing *does* still result in a fixed number of physical files per partition (one file per bucket), it's just that which file a row lands in is determined by a hash rather than by the literal partition-column value the way partitioning works. Worth clarifying with Evan if this comes up again, since the distinction that matters most for an interview is *hash-based fixed-count buckets* vs. *value-based variable-count partitions*, not necessarily "file-level vs. not."
 
+**What actually gets hashed?** A student's follow-up question in class assumed bucketing always hashes an entire row - teacher's clarification: "A hash can be of literally anything. So it can be from just the value of an individual cell. It can be an entire row. It can be an entire column. It just has to be a string before you pass it to the hashing algorithm." So bucketing by a single column (e.g. hashing just the `date` value) is completely normal - the hash input isn't required to be the whole row, just whatever column(s) you choose to bucket by, converted to a string first if it isn't one already.
+
 ---
 
 # File Compression Formats
@@ -510,6 +514,63 @@ Expanded: this broadens the schema-evolution concept beyond just Avro - it's a c
 | **Delta** (Delta Lake) | Open Table Format | Same table-level schema evolution/enforcement role as Iceberg, but tied to Databricks' Delta Lake (`Training 5.md`) |
 
 **Why this distinction matters:** Avro/Protobuf solve schema evolution at the *individual record/message* level (useful for streaming, per the section above), while Iceberg/Delta solve it at the *whole table* level (useful for a data lakehouse's Bronze/Silver/Gold tables, `Training 5.md`'s Medallion Architecture) - a real pipeline commonly uses both together, e.g. Avro-encoded Kafka messages landing into Delta/Iceberg tables downstream.
+
+---
+
+# Agent Generated Notes
+
+## The Small File Problem in Practice: JPMorgan Chase Story
+
+Teacher's definition (real-world account): "I actually have personal experience with the small file problem. This was actually something that I encountered while I was at JPMorgan Chase... I was in charge of their data archival system... our output was usually between 500 gigabytes and one and a half terabytes for one file. But the system that we had partitioned that data so that the partitions were only one megabyte in size... What would happen is that I would start the archival job and a few hundred of those partitions would get archived, but then one would fail. And if one failed, the entire job failed... Ultimately, the method that I arrived on was Spark's repartition method... I took these one megabyte partitions and turned them into 10 gigabyte partitions. And as soon as they were 10 gigabyte partitions, they would all archive, no problem. And we archived our entire backlog in a matter of like two weeks."
+
+Expanded: a concrete, real production illustration of the Small File Problem section above - the archival job wasn't failing because of bad code, it was failing because of file architecture: thousands of 1MB partitions meant thousands of chances for a single archival step to fail, and any one failure killed the whole job (with no simple retry available, per additional constraints the teacher didn't detail). The fix wasn't smarter code, it was consolidating file count - using Spark's `repartition` method (an "odd choice" per the teacher, since `coalesce` is the more commonly expected tool for reducing partition count, but benchmarks in this specific case showed `repartition` performed better) to go from many tiny partitions to few large ones, which is exactly the "compact many small files into fewer, larger files" fix already noted in the Small File Problem section above, just with real numbers attached (500GB-1.5TB files, 1MB partitions -> 10GB partitions, a 2-week backlog cleared once fixed). Worth remembering `repartition` vs. `coalesce` as a concrete pair of Spark methods to investigate further once Spark coverage begins next week.
+
+**Also worth noting (teacher's aside):** the small file problem is largely obsolete for teams using an object store (S3, ADLS, GCS) instead of raw HDFS - "the nice thing about cloud is that all that stuff is the company's problem," since the cloud provider handles fault tolerance/replication internally and doesn't expose the same fixed-block-size architecture that makes small files expensive on HDFS specifically.
+
+---
+
+## Optimization Principle: Less Work, Not Faster Work
+
+Teacher's definition: "Most optimizations are actually not faster methods to do something. They're methods that involve less work at all."
+
+Expanded: this was stated directly as the takeaway from the "why is Spark faster than MapReduce" discussion (see the MapReduce Memory vs. Disk section above) - a live correction of a common misconception. A student asked whether Spark's speed advantage just comes down to memory being faster than disk; the teacher's answer was explicitly that this reasoning is wrong: "The reason that Spark is faster than MapReduce is because there are a bunch of data transfers that just simply don't happen in a Spark job, but which need to happen in a MapReduce job" - it's not that the same operations run faster, it's that Spark skips operations MapReduce is forced to do (the repeated disk<->memory round-trips). The same principle was illustrated with a second example: querying an unpartitioned billion-row sales table for one month's data means scanning all billion rows (a full table scan), while querying a *partitioned* table means the engine only has to look at that one partition - e.g. 100,000 rows instead of a billion - finishing much faster not because each row is processed any quicker, but because 99.99% of the rows were never touched at all. This is a generalizable interview-ready framing worth remembering: **first ask "can I avoid doing this work entirely?" before asking "can I do this work faster?"**
+
+---
+
+## Schema Evolution: Naming Gotcha
+
+Teacher's definition: "It is Schema Evolution and it is not Schema Evaluation. It's very common for people to say Schema Evaluation, but that is quickly dispelled when you think about what you're actually doing."
+
+Expanded: worth flagging as a common mix-up - the correct term is **Schema Evolution** (the schema *evolves*/changes over time as source systems add, remove, or rename columns, per the Schema Evolution section above), not "Schema Evaluation." The teacher's reasoning for why "Evolution" is the right word: the system is adapting to a schema that is genuinely changing over time (evolving), not just checking/evaluating a fixed schema once. Small thing, but exactly the kind of terminology slip an interviewer might notice.
+
+---
+
+## Introduction to Spark
+
+Teacher's definition: "Spark is the big giant technology in data engineering. When Spark came out, it basically revolutionized the entire field. And while open source regular Spark is not necessarily the most important thing anymore, every single modern data processing system either is exactly Spark or it is absolutely based on Spark."
+
+Expanded: this is the teacher's first formal introduction of Spark in this training (setting up the following week's material, per the teacher's own framing: "today we've basically taken everything we learned this week, and it's all been leading up to when we talk about Spark"). It naturally continues the MapReduce discussion above - Spark is presented as MapReduce's direct successor and replacement, not an unrelated new technology.
+
+**Spark is everywhere, even when it isn't literally "Spark" (teacher's examples):**
+
+| System | Relationship to Spark |
+|---|---|
+| AWS Glue | Not exactly Spark, but "an AWS special syntax special situation version of Spark" |
+| Google Cloud Dataproc | Written in Apache Beam syntax - Beam is a syntax/API layer, not a processing engine itself, and Beam's backend is based on Spark |
+| Databricks | Founded by some of the original Spark developers; the original product concept was literally "Spark plus a data warehouse in a single cloud service." Per the teacher: "Databricks is Spark. Spark is Databricks. Everything that you do in Databricks is based on Spark." |
+
+**Why Spark took over - two reasons (teacher's definition):**
+
+1. **Speed** - "Before Spark came out, we had MapReduce. MapReduce did some operations on disk and others in memory. In Spark, we did all of our processing in memory. Turns out if you do that, your average processing time is about 100 times faster, give or take." (See the MapReduce Memory vs. Disk section above, and the Optimization Principle note above for *why* this is true - it's the elimination of disk round-trips, not memory being inherently faster.)
+2. **The DataFrame API (arrived with Spark 2.0)** - Spark 1.0's original data structure was the **RDD** (Resilient Distributed Dataset) - "a large distributed list of values or a distributed array, basically," conceptually the same lineage as a plain Python list processed with `map`/`filter`/`reduce`, just distributed across a cluster at a much bigger scale (the same lineage MapReduce itself came from, per the MapReduce section above). With Spark 2.0, the Spark developers noticed Python's Pandas library becoming popular for data processing and built an equivalent into Spark itself - "Spark SQL," built around a **DataFrame**, that behaves like a Pandas DataFrame but at distributed scale. Per the teacher: "Spark SQL is the underlying thing of pretty much all data processing technologies right now. In an average data engineering job... it is probably either going to be working with a Spark DataFrame or some other framework's equivalent of a Spark DataFrame."
+
+**Spark is a processing engine, not a storage system (important distinction):**
+
+Teacher's definition: "Spark does not itself have a data storage system in it. So it does not ever make sense to say that you are storing data in Spark. Spark is the processor, it is not the storage, and so you always need to use Spark with a separate storage system."
+
+Expanded: this directly parallels the earlier Hadoop Cluster Components table (HDFS = storage, YARN = cluster manager, MapReduce = processing) - Spark occupies the *processing* role in a modern stack, the same role MapReduce used to fill, but it always needs to be paired with something else for actual storage (HDFS, S3, a Hive/Glue-catalog-backed table, etc.). A worked example the teacher gave: on an on-prem Hadoop stack, new data lands in HDFS -> Spark reads it, processes it into a warehouse-shaped format -> Spark writes the result into Hive -> BI tools (Tableau, Power BI) query Hive. Spark is the middle step connecting storage to storage, never the storage itself. This is also why Databricks' original pitch mattered so much: it was explicitly "Spark **plus** a place to store your data" - solving the one thing plain Spark deliberately doesn't do on its own.
+
+**ETL vs. ELT with Spark:** a student asked whether Spark always uses ETL. Teacher's answer: "Spark can be adapted to ELT purposes, and that's the way that it's normally used in Databricks today. But ELT methods in Spark did come in later Spark versions. So yeah, its original concept was to be an ETL tool. ETL was the way that things were done in data engineering until about two or three years ago. It's only been since then that ELT became the dominant way of doing things." This connects directly to the ETL/ELT material and the "Taylor Swift problem" push-vs-pull framing from `Training 5.md` - Spark's own history (ETL-first, ELT added later) mirrors the industry-wide shift described there.
 
 ---
 
