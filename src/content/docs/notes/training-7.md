@@ -1228,3 +1228,74 @@ Expanded: a JVM language is any programming language that compiles down to Java 
 **Why this matters for Spark specifically:** Spark's core engine is written in Scala, which is precisely why Scala and Java (both JVM languages) can submit compiled JAR applications directly to `spark-submit` and run natively on the JVM Spark itself is built on - while PySpark instead runs Python code that talks to that same JVM engine underneath via an interop layer, rather than running Python directly *on* the JVM.
 
 ---
+
+# Agent Generated Notes
+
+Additional material Evan covered in the live class recording that wasn't yet reflected above.
+
+## Why isn't executor/hardware sizing decided automatically by Spark?
+
+Q. If the optimizer already decides so much automatically (logical/physical plans, join strategy, etc.), why do you still have to manually calculate `--num-executors`/`--executor-memory`/`--executor-cores` yourself, rather than Spark just figuring out the hardware allocation too?
+
+A. (Teacher's definition) "It's your responsibility as the programmer to write the spark submit command with the amount of hardware that you need already, because often what will happen in a professional environment... is that there are going to be multiple teams sharing the same cluster. If Spark decided the amount of hardware resources that it was going to use automatically, then that would mean that every time you run the Spark job it would use up either 100 percent or close to 100 percent of the entire cluster's resources, because there's no way for the software to know that it needs to reserve some compute for other teams. So that's why they've kept that as something that you have to decide as a human instead of just having Spark do it automatically. The logical plans and physical plans that the optimizer creates are going to be within the limitations that you have given it."
+
+Expanded: this draws a sharp line between what Catalyst's optimizer *is* and *isn't* responsible for. The optimizer (per the Optimizer section above) freely decides the *strategy* for executing a job - join algorithms, predicate pushdown, partition planning - all without programmer input. But it never decides *how much of the cluster's total hardware* to claim, because on a real multi-tenant cluster (the same JP Morgan Chase example referenced earlier in this file, where multiple teams shared one large cluster) nothing in Spark itself knows what other teams currently need. Auto-claiming resources would mean every job greedily grabs the whole cluster by default. This is why the executor-sizing math (cores/node ÷ 5, RAM/node ÷ executors-per-node, from the worked example above) is a human, `spark-submit`-time decision, not something the optimizer/AQE ever touches - AQE (also covered above) only ever adapts *within* the resource ceiling you already gave it, never expands past it.
+
+---
+
+## Salting vs. Hive Bucketing
+
+Q. Is salting the same technique as bucketing in Hive?
+
+A. (Teacher's definition) "The way that [salting] works is sort of analogous to the way that bucketing in Hive works, except that in Hive it's going to be based on a cryptographic hash, whereas with salting it is not necessarily going to be based on a hash."
+
+Expanded: both techniques solve the same underlying problem - deliberately splitting data into a fixed number of evenly-sized buckets/partitions rather than letting natural key distribution decide - but they assign rows to buckets differently. Hive bucketing computes a cryptographic hash of the bucketing column and uses that hash (modulo the bucket count) to deterministically assign each row to the same bucket every time. Salting (per the Salting section above) instead just tacks on a random discrete value (e.g. `rand() * numSalts`, cast to int) as its own column and repartitions by that - there's no hashing involved, and the salt value carries no relationship to the row's actual content, it's purely there to spread rows evenly.
+
+| | Hive Bucketing | Spark Salting |
+|---|---|---|
+| Assignment mechanism | Cryptographic hash of the bucketing column | Random discrete value, no hashing |
+| Deterministic? | Yes - same row always hashes to the same bucket | No - salt value is randomly assigned each time |
+| Where it lives | A property of how a Hive table is physically stored | A temporary column added, then dropped, during a Spark job |
+
+---
+
+## Broadcast Join Size Guideline
+
+Q. Is there a concrete size threshold for what's safe to broadcast in a broadcast join?
+
+A. (Teacher's definition) "You're only ever going to want to broadcast smaller tables, so generally the limit is considered to be about five gigabytes - that's of course going to change depending on how big the cluster that you're running is, but usually it's going to be a five gigabyte table or less that you might want to broadcast."
+
+Q. How do you know how much memory a table will actually consume before deciding whether to broadcast it?
+
+A. (Teacher's definition) "You can analyze how much data a table is going to consume... you just do that with a normal operation of checking the file size. If the file is five gigabytes, then when it's loaded into memory it's also going to be five gigabytes."
+
+Expanded: this gives the Broadcast Variables/Joins section above (which only said "genuinely small tables") an actual concrete rule of thumb - roughly 5GB as the practical ceiling for what's safe to copy into every executor's memory, scaling with however much RAM the cluster's nodes actually have available. The estimation method is deliberately simple: on-disk file size is treated as a reasonable proxy for in-memory size, so checking a file's size on disk is usually sufficient to decide whether it's a broadcast candidate, without needing to actually load it first. Also worth noting the order of operations this implies: you decide what to broadcast *while writing the job's code* (based on the data itself), which happens independently of - and generally before - deciding the `spark-submit` executor memory/core settings covered earlier in this file.
+
+---
+
+## Repartitioning Carries No Data-Loss Risk
+
+Q. When you repartition a DataFrame, is there any risk of losing data, or does it need to be backed up first?
+
+A. (Teacher's definition) "There's no need to back up your data in repartitioning - when you partition the data, your output data is going to contain the exact same data as the input did, it's just that the data will be divided up differently. Spark will be equally able to read the data before it has been partitioned and after it has been partitioned."
+
+Expanded: worth stating plainly since it's an easy thing to worry about - `repartition()`/`coalesce()` (covered in the Narrow vs Wide Dependencies section above) never drop or duplicate rows, they only change how the same complete dataset is physically split across partition boundaries. The teacher drew an explicit contrast here with repartitioning a hard drive (e.g. setting up a Windows/Linux dual-boot) - that's an unrelated, hardware-level operation (resizing disk partitions, cleaning up bad sectors) with real data-loss risk if done incorrectly; Spark's `repartition()` operates purely on data already loaded into a DataFrame/RDD, on disk in the sense of writing partition files, not on physical disk partitioning at all, so the two "repartition" concepts only share a name, not a mechanism or risk profile.
+
+---
+
+## Why the JVM Exists (Historical Motivation)
+
+Q. Why does Java use a virtual machine at all, instead of compiling directly to machine code the way C/C++ do?
+
+A. (Teacher's definition) "Before the 1990s when Java first came out... if you were working on serious applications then you were probably doing so in a language like C or C++... there is one little issue you can run into when you're trying to create production applications running on a large number of different customer machines: C and C++ applications are compiled to run on the specific processor they were written to run on. That creates a bit of an issue when you're trying to make an application commercially available, because what you'll wind up having to do is make a bunch of little adjustments and perhaps compile the code separately on a number of different machines just to guarantee that a customer can actually run it on their machine... One of the big features that the Java programming language had when it first came out was the write-once-run-anywhere feature. With Java, the Java Virtual Machine basically takes care of the compatibility issue for you, because there is a team at Oracle... that has some full-time dedicated people whose job is to ensure that the JVM is going to be compatible with any processor that you're likely to find on the market."
+
+Expanded: this is the concrete historical problem the "write once, run anywhere" capability (already stated in the JVM section above) was actually invented to solve. Before the JVM, shipping a C/C++ application commercially meant either compiling separate builds per target processor architecture, or hiring engineers specifically to handle cross-platform compatibility - a real, costly burden for any software vendor. Java's answer was to centralize that burden: Oracle (Java's owner) maintains the JVM implementation for each platform, so any Java (or JVM-language) program compiles once to bytecode and Oracle's own JVM team - not the application developer - is responsible for making sure that bytecode runs correctly on whatever processor it ends up on (the teacher's concrete example: the same Java program, unmodified, runs identically on an x86 machine and on an Apple Silicon/ARM MacBook). This is the direct motivating story behind why `javac` deliberately stops at bytecode instead of compiling straight to machine code (per the "What specifically does the compilation step produce?" Q&A above).
+
+---
+
+## Predicate Logic's Historical Lineage (Optional Background)
+
+Q. Where does the term "predicate" (as in predicate pushdown) actually come from?
+
+A. (Teacher's definition, explicitly flagged as optional trivia) "Predicates are a reference to a kind of formal logic... that field is predicate logic, and predicate logic is one of the philosophical antecedents to SQL - there was a long philosophical tradition dating back to Aristotle of formal logic, and in the 20th century there was a guy by the name of Gottlob Frege, a German mathematician, who formalized [predicate logic]... the way predicate logic works was one of the intellectual underpinnings of logic programming, so things like Prolog - and logic programming is a direct ancestor of SQL." The teacher was explicit that "if you're not a data and philosophy enthusiast you don't necessarily need to know this" - it's background curiosity, not interview-relevant material, unlike the practical predicate pushdown mechanism itself (already covered in detail in the Optimizer section above).
+

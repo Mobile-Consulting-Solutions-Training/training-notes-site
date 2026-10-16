@@ -101,6 +101,8 @@ Q. What is a Snowflake Schema?
 
 A. (Teacher's definition) Snowflake Schema - a normalized extension of the star schema.
 
+![Star Schema vs Snowflake Schema - a star schema's dimensions attach directly to the center as flat points, while a snowflake schema's dimensions branch outward into further normalized sub-tables](../../../assets/star-vs-snowflake-schema.png)
+
 Expanded: a snowflake schema takes a star schema's flat dimension tables and normalizes them further, splitting each one into multiple related sub-tables (e.g. `dim_product` might split into `dim_product` -> `dim_product_category` -> `dim_product_line`, each holding its own attributes without repeating them). Visually this makes the dimensions branch outward like a snowflake's points instead of staying as simple flat "points" of a star - hence the name. It reduces data redundancy (closer to a normalized OLTP design) at the cost of needing more joins per query, which is the opposite trade-off from the star schema's denormalized simplicity.
 
 **Naming gotcha - don't confuse with the *company* Snowflake** (the cloud analytical database from earlier in this file). A snowflake schema is a *table design pattern* usable in any relational database (Postgres, Redshift, BigQuery, Snowflake-the-company, etc.) - the shared name is coincidental, not a feature specific to that vendor.
@@ -514,5 +516,82 @@ Where this trade-off actually shows up on the job:
 - **Data skew / "hot key" problems**: the "Taylor Swift problem" is really a *skew* problem - one entity (a celebrity, or in DE terms one customer/product/partition key) generates wildly more volume than everything else. This is the same issue behind Spark join skew and Kafka partition hot-spotting (later Spark/Kafka days) - a few disproportionately large keys overwhelming one partition/worker while everything else sits idle.
 
 The interview-relevant takeaway: there's no universally "correct" answer - push optimizes read speed at the cost of write amplification; pull optimizes write cost at the cost of read latency/complexity. The job is recognizing which side of that trade-off a given pipeline or query pattern actually needs.
+
+---
+
+# Agent Generated Notes
+
+Content Evan covered live in class that wasn't yet captured above, pulled from the full class transcript.
+
+## Data Engineer vs. Data Scientist
+
+Q. What's the actual difference between a data engineer and a data scientist, and how did that distinction come about?
+
+A. (Teacher's definition) "A data engineer...is there to basically sort of clear the way for the data scientist...in order for them to do that, they need a data set that is properly ordered. And one thing that people with that level of technical education don't tend to know is how to take data that's messy and make it clean...the process of data engineering is basically taking data that's messy, that's in one location, processing it and putting it into a different location where it is clean and it's ready for the data scientist to take it and use it."
+
+Expanded: historically, "data scientists...were basically just statisticians, like they learned to write a little bit of code, but they'd gone to school for statistics" - strong at analysis/visualization, but not necessarily trained to handle messy, disorganized source data. The data engineer's role exists specifically to solve that gap: take messy data from wherever it lives, clean and reorganize it, and hand off a properly-structured dataset the data scientist can actually use - whether for charts or, these days more commonly, for training ML models ("If you're a data scientist these days, you're probably more of an ML engineer than a statistician"). This is the practical, human-roles version of the OLTP->ETL/ELT->OLAP pipeline already covered elsewhere in this file - data engineering is the "processing" step in that pipeline, data science is what happens downstream of it.
+
+---
+
+## Table Grain
+
+Q. What is the "grain" of a table?
+
+A. (Teacher's definition) "The grain of a table...one item in our fact sales table is going to represent one distinct order that took place in a certain period of time. Or the customer's table, each row was going to represent a customer. The description of what each row fundamentally represents in a data warehouse is the grain of the table."
+
+Expanded: grain answers "what does one row of this table actually mean?" - a vocabulary word the teacher flagged as one that "occasionally comes up in interviews." A table can be **coarse-grained** (each row represents an aggregation of many underlying events - e.g. the "total sales by product category" result of an analytical `GROUP BY` query) or **fine-grained** (each row represents one specific, granular event). Most fact tables in a warehouse are fine-grained, and it's common for the grain to go even finer than "one order": "in a fact sales table, you can have one row represent one sale, but actually one thing that's common is to make the grain even finer than that...very often what will happen is that in a fact sales table, it's actually not gonna be one complete order that shows up as a row, but actually one line item on the customer's receipt that winds up on the row."
+
+**Worked example (teacher's):** someone buying supplies to build a birdhouse (a hammer, a box of nails, several pieces of wood) generates one receipt with multiple line items - in that case, the fact table's grain is "one line item," not "one order," and a separate `orders` table holds the order-level data shared across all of that order's line items (every line item row shares the same order ID, linking back to it).
+
+| Grain | Example | Row represents |
+|---|---|---|
+| Coarse | `product_category, SUM(revenue)` result | An aggregation across many events |
+| Fine | One row per completed order | A single order |
+| Even finer | One row per line item on a receipt | A single product within a single order |
+
+---
+
+## ETL vs. ELT, Mapped to Warehouse vs. Lakehouse
+
+Q. Which processing pattern - ETL or ELT - goes with a data warehouse, and which goes with a data lakehouse?
+
+A. (Teacher's definition) "For a data warehouse, you'd use an algorithm called ETL, extract, transform, load. For a data lake house, you'd use ELT, which is extract, load, transform. Basically, that means you do the transfer, then you transform it to move it from bronze to silver, then transform it again to go from silver to gold."
+
+Expanded: this gives a concrete, memorable pairing for the more abstract ETL-vs-ELT framing already covered in this file's "Taylor Swift Problem" section - a traditional data warehouse transforms data *before* loading it into the warehouse's strict schema (ETL), while a lakehouse loads raw data into Bronze first, completely unmodified, and only transforms it afterward as it moves Bronze -> Silver -> Gold (ELT). This is exactly why the Bronze layer can tolerate messy, inconsistent data (per the Medallion Architecture section above) - nothing is required to be "clean" until the transform step runs, which happens after loading, not before.
+
+---
+
+## Hands-On: Bronze -> Silver Pandas Cleanup Demo
+
+Q. What did the live Bronze -> Silver ELT demo actually involve, beyond the SQL-based star-schema conversion already covered above?
+
+A. (Teacher's live demo, separate from the `warehouse_practice` star-schema conversion worked example above) Evan built a second, separate demo specifically to show *messy* data being cleaned: a deliberately flawed `bronze.sales` table (`transaction_id, transaction_date, customer_name, product, category, quantity, unit_price, country`) seeded with real data-quality problems - inconsistent capitalization (`electronics` vs `Electronics` vs `ELECTRONICS`), invalid dates, a negative quantity, an invalid/missing unit price, and duplicate transaction IDs - then used a Pandas ETL script to clean it and load the result into `silver.sales`.
+
+Expanded - the cleanup steps applied in the `bronze_to_silver.py` script:
+
+| Problem in Bronze | Pandas fix |
+|---|---|
+| Inconsistent category capitalization | `df['category'].str.strip().str.title()` |
+| Invalid/malformed dates | `pd.to_datetime(..., errors='coerce')` - turns bad dates into `NaT` instead of crashing the whole job |
+| Invalid numeric values (e.g. unit price) | Numeric conversion with `errors='coerce'` - turns bad values into `NaN` |
+| Duplicate transaction IDs | `df.drop_duplicates(subset='transaction_id')` |
+| Business-rule violations (negative quantity, non-positive price, invalid date) | Filtered out with boolean conditions (`quantity > 0`, `unit_price > 0`, date not null) |
+| No standardized derived fields | Added a computed `sales_amount = quantity * unit_price` column |
+
+Load into Silver: `df.to_sql('sales', engine, schema='silver', if_exists='replace', index=False)`.
+
+**Why keep the rejected rows in Bronze rather than just discarding them:** rows that failed validation (e.g. a customer with a blank unit price) were dropped from what made it into Silver, but they're still sitting in Bronze, unedited. If a sales associate can later explain the missing price, that value can be corrected directly in Bronze and the same pipeline re-run to bring it into Silver/Gold - which wouldn't be possible if the bad row had simply been deleted rather than filtered out at the Silver step. This is the same point already made in this file's Medallion Architecture section, just demonstrated concretely rather than described abstractly.
+
+**Silver -> Gold, in principle:** the same session began a `silver_to_dwh.py` script to split the cleaned Silver data out into the existing Gold star schema (matching new products/dates against `dim_product`/`dim_date`, generating surrogate keys for genuinely new dimension rows, and appending new fact rows to `fact_sales`) - but this part of the live demo ran out of time and was left incomplete/messy (an AI-assisted script accidentally wiped a table mid-demo, in Evan's own words: "we're gonna have to end class today on this huge disappointment. It deleted my tables"). Take the Silver->Gold portion of this particular demo as an illustration of the *intent* (resolve business keys against existing dimension surrogate keys, append rather than overwrite fact tables), not as a clean, reusable worked example.
+
+---
+
+## SCD Types - Live In-Class Framing (compare with the summary earlier in this file)
+
+Q. How did Evan define SCD Type 0/1/2 live in class, in his own words?
+
+A. (Teacher's live definitions - note this phrasing is a bit different from, and looser than, the cleaner Type 1/Type 2 summary already given earlier in this file, so it's captured here verbatim for completeness): "SCD type zero is don't record the change, just overwrite...we literally just do nothing." For type one: "what we do is we record the change in the record, but don't change the schema." For type two: "we create a new column to track the change across various shifts."
+
+Expanded: Evan himself flagged that he finds this terminology hard to keep straight ("I have looked this up a gazillion times and I never remember it"), and his live phrasing here doesn't map cleanly onto the standard Type 1 = overwrite / Type 2 = new row with history distinction already documented earlier in this file. The concrete example he gave immediately after (a `current_address`/`previous_address` column pair that shifts values forward each time an address changes, keeping one level of history without adding a new row) was presented as a way to track a change *without* a surrogate key - worth asking Evan directly to reconcile this in-class phrasing with the textbook Type 0/1/2 definitions if it comes up again, since (per the existing Terminology note in this file) the numbering isn't perfectly standardized industry-wide in the first place.
 
 
