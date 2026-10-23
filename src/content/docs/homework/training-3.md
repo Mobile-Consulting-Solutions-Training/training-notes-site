@@ -1,6 +1,8 @@
 ---
 title: Training 3 Homework
 description: "GitHub Actions CI/CD: build a FastAPI app, containerize it, and deploy through a GHCR pipeline"
+sidebar:
+  order: 3
 ---
 
 ## Assignment

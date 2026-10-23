@@ -1,6 +1,8 @@
 ---
 title: "Training 20 - AWS Glue and Redshift"
 description: "CLI keys and CloudWatch, restarting Citi Bike ingestion, AWS Glue Bronze to Silver, and Redshift Serverless as the Gold layer."
+sidebar:
+  order: 20
 ---
 
 Teacher: Evan Flint

@@ -1,6 +1,8 @@
 ---
 title: Course Roadmap
 description: 45-day syllabus mapped to Training N.md notes files
+sidebar:
+  order: -1
 ---
 
 Course Roadmap (source: notes/slides/Data_Engineering_Student_Syllabus.pdf)

@@ -1,6 +1,8 @@
 ---
 title: "Training 23 - Terraform and Step Functions"
 description: "Infrastructure as Code with Terraform, orchestration with cron and Airflow, and AWS Step Functions."
+sidebar:
+  order: 23
 ---
 
 Teacher: Evan Flint

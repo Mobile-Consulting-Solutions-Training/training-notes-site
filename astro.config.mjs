@@ -6,9 +6,14 @@ import starlight from '@astrojs/starlight';
 export default defineConfig({
 	site: 'https://mobile-consulting-solutions-training.github.io',
 	base: '/training-notes-site',
+	// Walkthroughs used to live under notes/; keep old shared links working
+	redirects: {
+		'/notes/sql-training-walkthrough': '/training-notes-site/walkthroughs/sql-training-walkthrough/',
+		'/notes/hive-spark-etl-walkthrough': '/training-notes-site/walkthroughs/hive-spark-etl-walkthrough/',
+	},
 	integrations: [
 		starlight({
-			title: 'MCS Training Notes',
+			title: 'Big Data Handbook',
 			customCss: ['./src/styles/custom.css'],
 			social: [
 				{
@@ -21,6 +26,10 @@ export default defineConfig({
 				{
 					label: '📓 Notes',
 					items: [{ autogenerate: { directory: 'notes' } }],
+				},
+				{
+					label: '🧭 Walkthroughs',
+					items: [{ autogenerate: { directory: 'walkthroughs' } }],
 				},
 				{
 					label: '📝 Study Guides',

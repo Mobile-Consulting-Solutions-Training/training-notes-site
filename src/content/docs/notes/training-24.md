@@ -1,6 +1,8 @@
 ---
 title: "Training 24 - Incremental Pipelines"
 description: "An incremental Citi Bike pipeline: batch windows, landing table, MERGE, stored procedures and checkpoints, orchestrated with Step Functions under Terraform, plus a Streamlit dashboard on EC2."
+sidebar:
+  order: 24
 ---
 
 Teacher: Evan Flint

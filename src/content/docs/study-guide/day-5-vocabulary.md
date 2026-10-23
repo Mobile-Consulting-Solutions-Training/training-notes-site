@@ -1,6 +1,8 @@
 ---
 title: Day 5 Vocabulary
 description: Glossary of terms and definitions from the Training 5 study guide.
+sidebar:
+  order: 51
 ---
 
 Vocabulary — Study Guide Day 5

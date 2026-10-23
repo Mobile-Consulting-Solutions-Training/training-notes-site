@@ -1,6 +1,8 @@
 ---
 title: "Training 14 - Kafka Cluster Setup & Spark Streaming"
 description: "Kafka KRaft cluster setup, the teacher's ChatGPT class walkthrough, and a market-data demo measuring Spark micro-batch latency."
+sidebar:
+  order: 14
 ---
 
 Teacher: Evan Flint

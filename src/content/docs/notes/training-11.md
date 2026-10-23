@@ -1,6 +1,8 @@
 ---
 title: "Training 11 - Postgres to Hive with Scala Spark"
 description: "The teacher's finished Postgres to Hive Scala Spark job, why native metastore integration failed against the hive-server container, and the generate_sales.py data generator."
+sidebar:
+  order: 11
 ---
 
 Teacher: Evan Flint

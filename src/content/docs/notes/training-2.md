@@ -1,6 +1,8 @@
 ---
 title: Training 2 - Python and Pandas
 description: Python background, loops, functions, exceptions, logging, and Pandas DataFrames - concepts and worked examples
+sidebar:
+  order: 2
 ---
 
 Teacher: Evan Flint

@@ -1,6 +1,8 @@
 ---
 title: "Training 21 - Cloud Networking for Glue and Redshift"
 description: "VPCs, subnets, security groups and endpoints for the Glue to Redshift (Silver to Gold) step."
+sidebar:
+  order: 21
 ---
 
 Teacher: Evan Flint

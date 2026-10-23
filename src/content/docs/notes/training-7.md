@@ -1,6 +1,8 @@
 ---
 title: Training 7 - Spark Submit, Architecture & Execution
 description: spark-submit arguments and deploy modes, Spark's driver/executor architecture, Catalyst/AQE, jobs/stages/tasks, narrow vs. wide transformations, lazy evaluation, data skew/salting, caching/broadcast joins, and the JVM.
+sidebar:
+  order: 7
 ---
 
 Teacher: Evan Flint

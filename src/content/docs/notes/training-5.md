@@ -1,6 +1,8 @@
 ---
 title: Training 5 - Data Warehouse Concepts
 description: "Dimensional modeling - star schemas, normalization, dimension tables, surrogate keys, SCD, data lakehouse vs. warehouse, and the fan-out (Taylor Swift Problem) system design scenario."
+sidebar:
+  order: 5
 ---
 
 Teacher: Evan Flint

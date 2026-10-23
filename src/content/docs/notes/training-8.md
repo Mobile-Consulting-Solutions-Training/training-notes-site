@@ -1,6 +1,8 @@
 ---
 title: Training 8 - Spark Partitioning, Salting & Hive Setup
 description: repartition() vs. salting for handling data skew, then adding Hive to the local Docker environment and the medallion-migration ETL lesson plan.
+sidebar:
+  order: 8
 ---
 
 Teacher: Evan Flint

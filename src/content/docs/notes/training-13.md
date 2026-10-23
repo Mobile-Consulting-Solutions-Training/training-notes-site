@@ -1,6 +1,8 @@
 ---
 title: "Training 13 - Open Table Formats and NoSQL"
 description: "Kafka limitations, Delta, Iceberg, Avro and Protobuf, NoSQL database types, and the Kafka to Spark to MongoDB class walkthrough."
+sidebar:
+  order: 13
 ---
 
 Teacher: Evan Flint

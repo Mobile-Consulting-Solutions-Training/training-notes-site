@@ -1,6 +1,8 @@
 ---
 title: Training 7 Homework
 description: Apache Spark execution and performance - architecture, spark-submit, transformations, lazy evaluation, AQE, data skew, caching, and broadcast joins.
+sidebar:
+  order: 7
 ---
 
 ## Assignment

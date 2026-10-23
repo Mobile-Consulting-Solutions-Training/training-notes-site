@@ -1,6 +1,8 @@
 ---
 title: Hive + Spark ETL Walkthrough
 description: Hands-on runbook for migrating the Postgres medallion warehouse to Hive and building the Source to Bronze to Silver to Gold ETL pipeline with Spark.
+sidebar:
+  order: 80
 ---
 
 # Hive + Spark ETL Walkthrough: Medallion Migration + First Real ETL Pipeline

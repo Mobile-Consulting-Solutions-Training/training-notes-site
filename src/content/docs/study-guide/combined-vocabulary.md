@@ -1,6 +1,8 @@
 ---
 title: Combined (Days 1-5) Vocabulary
 description: Consolidated glossary of terms and definitions spanning Training 0 through Training 5.
+sidebar:
+  order: 1001
 ---
 
 Vocabulary — Study Guide Combined (Days 0-5)

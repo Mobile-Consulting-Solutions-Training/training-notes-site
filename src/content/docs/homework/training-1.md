@@ -1,6 +1,8 @@
 ---
 title: Training 1 Homework
 description: Linux Users, Permissions, Text Processing and Processes - assignment and completed submission
+sidebar:
+  order: 1
 ---
 
 ## Assignment

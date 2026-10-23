@@ -1,6 +1,8 @@
 ---
 title: "Training 17 - dbt with Snowflake"
 description: "dbt DAGs, building models (RAW -> STG -> SILVER -> GOLD), dbt tests, Dynamic Table TARGET_LAG, Snowflake MFA for dbt, and interview narrative advice."
+sidebar:
+  order: 17
 ---
 
 Teacher: Evan Flint

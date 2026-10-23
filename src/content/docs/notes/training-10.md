@@ -1,6 +1,8 @@
 ---
 title: Training 10 - Scala Fundamentals (Continued)
 description: Case classes, traits/inheritance/mixins, the Nil/Null/null/Nothing/None/Unit distinctions, the Option type, flatMap, and companion objects.
+sidebar:
+  order: 10
 ---
 
 Teacher: Evan Flint

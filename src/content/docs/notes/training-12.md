@@ -1,6 +1,8 @@
 ---
 title: "Training 12 - Streaming Data"
 description: "Message brokers and streaming services (Kafka, MSK, Kinesis, Event Hubs, Pub/Sub, SQS, RabbitMQ, MQTT) and stream processing frameworks (Spark Structured Streaming, Flink, Glue Streaming, Dataflow)."
+sidebar:
+  order: 12
 ---
 
 Teacher: Evan Flint

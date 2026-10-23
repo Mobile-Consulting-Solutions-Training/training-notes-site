@@ -1,6 +1,8 @@
 ---
 title: "Training 22 - Warehouse Design and AWS Streaming"
 description: "Warehouse design beyond dimensional modeling, then Kinesis Data Streams, Kinesis Firehose and MSK."
+sidebar:
+  order: 22
 ---
 
 Teacher: Evan Flint
