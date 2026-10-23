@@ -1,6 +1,8 @@
 ---
 title: Training 0 - Data Engineering Fundamentals
 description: Hardware, Distributed Systems, Data Engineering Concepts, and The Data Engineer Role
+sidebar:
+  order: 0
 ---
 
 Teacher: Evan Flint

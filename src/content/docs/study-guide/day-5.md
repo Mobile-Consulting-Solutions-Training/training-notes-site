@@ -1,6 +1,8 @@
 ---
 title: Study Guide - Day 5
 description: "Quick summary, cheat sheet, and verbal-quiz flashcards for Training 5: SQL providers, dimensional modeling, normalization, and lakehouses"
+sidebar:
+  order: 50
 ---
 
 Study Guide - Day 5 (source: notes/Training 5.md)

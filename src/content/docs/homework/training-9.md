@@ -1,6 +1,8 @@
 ---
 title: Training 9 Homework
 description: A Scala Spark job querying the Gold warehouse tables - filtering, joining, aggregating, and reporting on sales data.
+sidebar:
+  order: 9
 ---
 
 ## Assignment

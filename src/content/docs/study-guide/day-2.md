@@ -1,6 +1,8 @@
 ---
 title: Study Guide - Day 2
 description: Quick summary, cheat sheet, and flashcards for Training 2 (Python and Pandas)
+sidebar:
+  order: 20
 ---
 
 Study Guide - Day 2 (source: notes/Training 2.md)

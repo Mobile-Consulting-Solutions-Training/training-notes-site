@@ -1,6 +1,8 @@
 ---
 title: "Training 15 - Cloud Platforms and Snowflake"
 description: "Unified data platforms, AWS/Azure/GCP object storage and VMs, EBS, and Snowflake features: Cortex Code, Workspaces, Semantic Views and virtual warehouses."
+sidebar:
+  order: 15
 ---
 
 Teacher: Evan Flint

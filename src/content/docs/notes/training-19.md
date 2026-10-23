@@ -1,6 +1,8 @@
 ---
 title: "Training 19 - AWS Batch Pipelines"
 description: "Batch pipelines on AWS: EMR Serverless, a Streamlit app on ECS/Fargate, QuickSight, and Citi Bike GBFS ingestion to S3 Bronze."
+sidebar:
+  order: 19
 ---
 
 Teacher: Evan Flint

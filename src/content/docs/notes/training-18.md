@@ -1,6 +1,8 @@
 ---
 title: "Training 18 - AWS Cloud Fundamentals"
 description: "AWS regions, IAM, S3, EC2, VPC, EMR, serverless, Redshift, RDS, Athena, and SageMaker."
+sidebar:
+  order: 18
 ---
 
 Teacher: Evan Flint

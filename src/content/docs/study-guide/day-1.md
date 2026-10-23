@@ -1,6 +1,8 @@
 ---
 title: Study Guide - Day 1
 description: Quick summary, cheat sheet, and flashcards for Training 1 (Linux and Shell Scripting)
+sidebar:
+  order: 10
 ---
 
 Study Guide - Day 1 (source: notes/Training 1.md)

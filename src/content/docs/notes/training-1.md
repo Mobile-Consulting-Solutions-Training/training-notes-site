@@ -1,6 +1,8 @@
 ---
 title: Training 1 - Linux and Shell Scripting
 description: Unix/Linux background, Filesystem, Permissions, grep/awk/sed, Processes, cron, Shell Automation, and homework
+sidebar:
+  order: 1
 ---
 
 Teacher: Evan Flint

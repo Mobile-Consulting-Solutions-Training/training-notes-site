@@ -1,6 +1,8 @@
 ---
 title: Study Guide - Day 0
 description: Quick summary, cheat sheet, and flashcards for Training 0
+sidebar:
+  order: 0
 ---
 
 Study Guide - Day 0 (source: notes/Training 0.md)

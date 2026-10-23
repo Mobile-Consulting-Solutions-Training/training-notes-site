@@ -1,6 +1,8 @@
 ---
 title: Study Guide - Combined (Days 0-5)
 description: "Condensed cross-day overview spanning Training 0 through Training 5, for quick verbal review across the whole bootcamp so far"
+sidebar:
+  order: 1000
 ---
 
 Study Guide - Combined Overview, Days 0-5 (sources: notes/Training 0.md through Training 5.md)

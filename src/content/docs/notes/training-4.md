@@ -1,6 +1,8 @@
 ---
 title: Training 4 - SQL Fundamentals & Data Warehousing
 description: PostgreSQL keys, data types, joins, CTEs, window functions, and indexing/query plans, followed by data warehousing concepts and a Redshift/Snowflake/Databricks comparison; the syllabus's CI/CD headers went uncovered this session.
+sidebar:
+  order: 4
 ---
 
 Teacher: Evan Flint

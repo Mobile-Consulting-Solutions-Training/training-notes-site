@@ -1,6 +1,8 @@
 ---
 title: Training 4 Homework
 description: "PostgreSQL intermediate SQL: subqueries, CTEs, window functions, and indexing across 10 questions"
+sidebar:
+  order: 4
 ---
 
 ## Assignment

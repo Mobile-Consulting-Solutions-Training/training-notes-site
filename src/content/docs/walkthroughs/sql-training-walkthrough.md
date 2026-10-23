@@ -1,6 +1,8 @@
 ---
 title: SQL Training Walkthrough
 description: "Hands-on Postgres worked example - a schema with primary/foreign keys, followed by subquery, CTE, and window function exercises against the bd_sql_training dataset."
+sidebar:
+  order: 40
 ---
 
 

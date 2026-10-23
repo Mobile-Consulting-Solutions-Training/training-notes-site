@@ -1,6 +1,8 @@
 ---
 title: Training 5 Homework
 description: "Data warehousing: facts/dimensions, grain, surrogate keys, SCD types, star vs. snowflake, and a bronze-to-gold load walkthrough"
+sidebar:
+  order: 5
 ---
 
 ## Homework

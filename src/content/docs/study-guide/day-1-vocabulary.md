@@ -1,6 +1,8 @@
 ---
 title: Day 1 Vocabulary
 description: Glossary of terms and definitions from the Training 1 study guide.
+sidebar:
+  order: 11
 ---
 
 Vocabulary — Study Guide Day 1

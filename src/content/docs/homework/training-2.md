@@ -1,6 +1,8 @@
 ---
 title: Training 2 Homework
 description: Pandas - 10 exercises using the class employee dataset, with worked solutions and output
+sidebar:
+  order: 2
 ---
 
 ## Assignment

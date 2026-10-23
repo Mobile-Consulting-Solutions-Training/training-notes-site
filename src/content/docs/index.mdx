@@ -1,15 +1,19 @@
 ---
-title: MCS Training Notes
-description: Personal Data Engineering bootcamp notes and study guides, built for reading on the go.
+title: Big Data Handbook
+description: Data Engineering bootcamp notes, walkthroughs, study guides and homework, organized by training day.
 template: splash
 hero:
-  tagline: Data Engineering bootcamp notes, cheat sheets, and flashcards - readable on any device.
+  tagline: Data Engineering bootcamp notes, step-by-step walkthroughs, cheat sheets, and flashcards - readable on any device.
   image:
     file: ../../assets/hero-pipeline.svg
   actions:
     - text: Browse Notes
       link: /training-notes-site/notes/training-0/
       icon: right-arrow
+    - text: Walkthroughs
+      link: /training-notes-site/walkthroughs/sql-training-walkthrough/
+      icon: rocket
+      variant: minimal
     - text: Study Guides
       link: /training-notes-site/study-guide/day-0/
       icon: document
@@ -29,6 +33,11 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 		title="Daily Notes"
 		description="Detailed Q&A-style notes for each training day - teacher's definitions, expanded explanations, and comparison tables."
 		href="/training-notes-site/notes/training-0/"
+	/>
+	<LinkCard
+		title="Walkthroughs"
+		description="Step-by-step guides that retell a class build in order - what was built, why each piece exists, the errors hit and how they were fixed - plus a self-check."
+		href="/training-notes-site/walkthroughs/sql-training-walkthrough/"
 	/>
 	<LinkCard
 		title="Study Guides"

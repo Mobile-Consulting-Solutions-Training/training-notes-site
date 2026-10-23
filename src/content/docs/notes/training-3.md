@@ -1,6 +1,8 @@
 ---
 title: Training 3 - Git Workflow
 description: Branching, commits, pull requests, merge conflicts, code review, repository discipline, and release basics
+sidebar:
+  order: 3
 ---
 
 Teacher: Evan Flint

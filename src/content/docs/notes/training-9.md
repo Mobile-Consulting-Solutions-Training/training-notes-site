@@ -1,6 +1,8 @@
 ---
 title: Training 9 - IntelliJ/Scala Setup & Scala Fundamentals
 description: Troubleshooting IntelliJ/sbt Scala project setup, then the start of Scala fundamentals and a short note on data lineage.
+sidebar:
+  order: 9
 ---
 
 Teacher: Evan Flint

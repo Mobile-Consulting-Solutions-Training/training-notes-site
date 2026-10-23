@@ -1,6 +1,8 @@
 ---
 title: "Training 16 - Snowflake Dynamic Tables"
 description: "Snowflake Dynamic Tables and TARGET_LAG, plus CLI environment terms (REPL, TUI)."
+sidebar:
+  order: 16
 ---
 
 Teacher: Evan Flint

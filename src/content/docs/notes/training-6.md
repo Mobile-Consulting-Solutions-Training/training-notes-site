@@ -1,6 +1,8 @@
 ---
 title: Training 6 - Distributed Systems & HDFS
 description: HPC, fault tolerance, cluster managers (RAFT/ZAB), Hadoop cluster components, HDFS blocks/replication, the CAP theorem, MapReduce, the small file problem, a Hive intro, and file compression/storage formats.
+sidebar:
+  order: 6
 ---
 
 Teacher: Evan Flint
