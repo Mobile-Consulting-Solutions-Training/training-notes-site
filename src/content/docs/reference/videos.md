@@ -2,7 +2,7 @@
 title: Videos
 description: Every video shared in class, in one table, by training day and topic.
 sidebar:
-  order: 0
+  order: 2
 ---
 
 Every video from the notes pages' **Video Resources** sections, in one place. The videos are still on their notes pages too; the Day column links back to them.

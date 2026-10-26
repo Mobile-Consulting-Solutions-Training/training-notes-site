@@ -10,6 +10,7 @@ export default defineConfig({
 	redirects: {
 		'/notes/sql-training-walkthrough': '/training-notes-site/walkthroughs/sql-training-walkthrough/',
 		'/notes/hive-spark-etl-walkthrough': '/training-notes-site/walkthroughs/hive-spark-etl-walkthrough/',
+		'/videos': '/training-notes-site/reference/videos/',
 		// Vocabulary sheets used to live under study-guide/
 		'/study-guide/day-0-vocabulary': '/training-notes-site/vocabulary/day-0/',
 		'/study-guide/day-1-vocabulary': '/training-notes-site/vocabulary/day-1/',
@@ -45,7 +46,10 @@ export default defineConfig({
 					label: '🔤 Vocabulary',
 					items: [{ autogenerate: { directory: 'vocabulary' } }],
 				},
-				{ label: '🎬 Videos', slug: 'videos' },
+				{
+					label: '🧰 Reference',
+					items: [{ autogenerate: { directory: 'reference' } }],
+				},
 				{
 					label: '✅ Homework',
 					items: [{ autogenerate: { directory: 'homework' } }],
