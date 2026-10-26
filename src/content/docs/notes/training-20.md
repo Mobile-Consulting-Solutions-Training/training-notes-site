@@ -9,7 +9,7 @@ Teacher: Evan Flint
 
 Syllabus Day 21 (per file numbering; Oct 8) - topic: catching up on access (CLI keys, CloudWatch), restarting the Citi Bike ingestion, AWS Glue (Bronze → Silver), and introducing Redshift Serverless as the Gold layer. The roadmap lists EC2 + Lambda for Day 21 and AWS Glue for Day 22; class is running ahead.
 
-Built from the class recording (`transcriptions/Training 20 – 2026-10-08 13-23-23/`) since no live notes were taken. Evan's reference chat for the day: "AWS Glue Class Outline" (ChatGPT share link posted in the class chat).
+Notes compiled after class. Evan's reference chat for the day: "AWS Glue Class Outline" (ChatGPT share link posted in the class chat).
 
 ---
 
@@ -33,6 +33,17 @@ A. (Teacher's definition) Click your username in the top right → Security cred
 - **If a key leaks** (shown on screen, committed to GitHub), stop using it: deactivate and delete it, then create a new one. "It's trivial to create new access keys."
 - **Tag errors don't matter.** Adding a description to the key tries to create a tag, which students aren't allowed to do. The key still works if you can see the ID and secret.
 
+**Expanded (best practice):** long-lived access keys work for the class account, but they're the least preferred option in real jobs because they never expire and can leak. Interviewers often ask "how do you manage AWS credentials?"
+
+| Who needs access | Recommended | Why |
+|---|---|---|
+| A person at a laptop | **IAM Identity Center (SSO)**: `aws configure sso`, then `aws sso login --profile <name>` | Short-lived credentials that refresh through a browser sign-in |
+| Code running in AWS (Lambda, Glue, ECS, EC2) | An **IAM role** | Temporary credentials provided automatically; nothing stored |
+| Code outside AWS (e.g. CI/CD) | OIDC federation (e.g. GitHub Actions assuming a role), or access keys as a last resort | Avoids static secrets |
+| Database passwords and API keys | Secrets Manager (Training 21) | Encrypted, rotated, audited |
+
+**Interview line:** "People sign in through SSO with short-lived credentials, workloads in AWS use IAM roles, and secrets live in Secrets Manager. Long-lived access keys are a last resort, rotated and never committed to Git."
+
 ---
 
 Q. Why did Evan's own CLI commands keep failing with "The security token included in the request is invalid"?
@@ -55,7 +66,7 @@ A. (Teacher's definition) Search CloudWatch → Logs → Log groups (newer conso
 
 Q. Why did the Bronze data stop after hour 20 yesterday?
 
-A. (Teacher's definition) The EventBridge schedule ran at hours 18, 19 and 20, then stopped. He edited the schedule `citi-bike-ingestion-5-min` with a new start (Oct 8, 14:15) and end (17:00) time. "We want to end today at 17:00, not yesterday."
+A. (From class) The EventBridge schedule ran at hours 18, 19 and 20, then stopped. He edited the schedule `citi-bike-ingestion-5-min` with a new start (Oct 8, 14:15) and end (17:00) time. "We want to end today at 17:00, not yesterday."
 
 **Expanded:** EventBridge Scheduler schedules can have a **start and end date/time**. Yesterday's end time had passed, so the schedule silently did nothing. Once fixed, new `gbfs_discovery` files appeared every 5 minutes in `day=08/hour=18`. Students tested the pipeline by invoking Evan's Lambda from the CLI (`aws lambda invoke ... response.json`, then `cat response.json`). A command copied across two lines failed; it has to be on one line or use `\` continuations.
 
@@ -116,13 +127,28 @@ A. (Teacher's definition) Create a Glue execution role (separate from the EMR ro
 | `MaxConcurrentRuns: 1` | Two runs can't overlap and double-write |
 | `job-bookmark-enable` | Remembers which files were processed |
 
+**Expanded (correction: when bookmarks actually work):** enabling bookmarks is not enough on its own. A bookmark only tracks sources that the job reads **through Glue** with a `transformation_ctx`, and only if the script calls `job.init()` at the start and `job.commit()` at the end (which saves the bookmark state).
+
+```python
+src = glueContext.create_dynamic_frame.from_options(
+    connection_type="s3",
+    connection_options={"paths": ["s3://<bucket>/bronze/citibike/station_status/"]},
+    format="json",
+    transformation_ctx="src",          # bookmark state is stored under this name
+)
+```
+
+A plain `spark.read.parquet(...)` (like the Silver → Gold code below) is **not** bookmarked, so every run reads everything again. That's why later pipelines needed their own incremental logic (checkpoint table, MERGE).
+
+**Interview line:** "Glue job bookmarks store per-source state so the next run reads only new S3 files. They need `job.init`/`job.commit` and Glue-API reads with a `transformation_ctx`; plain `spark.read` isn't tracked, and bookmarks don't help with updated rows, so for real upserts I use a watermark column or MERGE."
+
 `cat > file.json <<'EOF' ... EOF` (a **heredoc**) writes everything between the two `EOF` markers into the file. Evan created the files in his editor instead.
 
 ---
 
 Q. What went wrong while running the Glue job, and how was each issue fixed?
 
-A. (Teacher's definition) Walked through live.
+A. (From class) Five problems in a row: a Region mismatch, a name collision in the shared account, a file-name typo, a missing `/*` on the object ARN in the policy, and overwrite mode needing `s3:DeleteObject`. Each was fixed and the job then succeeded.
 
 | # | Symptom | Cause | Fix |
 |---|---|---|---|
@@ -149,7 +175,7 @@ A. (Teacher's definition) Data Processing Unit. Because Glue is serverless, AWS 
 | G.2X | 2 | 8 | 32 GB | Memory-heavy jobs |
 | G.4X / G.8X | 4 / 8 | 16 / 32 | 64 / 128 GB | Very large jobs |
 
-Billing = DPUs × run time (per second, with a 1-minute minimum on recent Glue versions). Redshift Serverless has the same idea, called **RPUs** (Redshift Processing Units).
+Billing = DPUs × run time (per second, with a 1-minute minimum on recent Glue versions). Redshift Serverless has the same idea, called **RPUs** (Redshift Processing Units). The main DPU and Glue pricing entries are in `Training 18.md`.
 
 ---
 
@@ -159,13 +185,13 @@ Q. Why load Gold into Redshift instead of another S3 folder?
 
 A. (Teacher's definition) "Another directory of Parquet files in S3 is a completely normal and reasonable kind of gold layer, but we also can use Redshift, and Redshift is going to be more enlightening." The Gold schema should be a **star schema** because dimensional modeling "is going to be highly relevant in a large number of projects." The core data engineering services interviewers care about: **S3, Lambda, EMR, Glue, Redshift.**
 
-**Expanded:** Planned Gold model from Evan's chat: `dim_station` (one row per station: ID, name, location, capacity) and `fact_station_snapshot` (one row per station per 5-minute snapshot: bikes/e-bikes/docks available, utilization, flags). The first test table was simpler: `public.citibike_station_snapshot` with station ID, snapshot timestamp, station mode, bikes available, e-bikes available, docks available, capacity utilization, is_empty, is_full, is_operational.
+**Expanded:** Planned Gold model from Evan's chat: `dim_station` (one row per station: ID, name, location, capacity) and `fact_station_snapshot` (one row per station per 5-minute snapshot: bikes/e-bikes/docks available, utilization, flags). The first test table was simpler: `public.citibike_station_snapshot` with station ID, snapshot timestamp, station mode, bikes available, e-bikes available, docks available, capacity utilization, is_empty, is_full, is_operational. The star schema itself was built in the next class: see `Training 21.md` ("What star schema is Evan building for Citi Bike?").
 
 ---
 
 Q. How was Redshift Serverless set up?
 
-A. (Teacher's definition) Redshift console → create **workgroup** `citibike-wg` → performance: "price-performance target" (instead of base capacity) → latest version → default VPC, security group and subnets ("just handled for us") → no enhanced VPC routing → **namespace** `citibike-ns` → database `dev` → IAM credentials (no admin username/password at first) → create an IAM role with access to specific S3 buckets → create. Then **Query editor v2** → connect as a federated user.
+A. (From class) Redshift console → create **workgroup** `citibike-wg` → performance: "price-performance target" (instead of base capacity) → latest version → default VPC, security group and subnets ("just handled for us") → no enhanced VPC routing → **namespace** `citibike-ns` → database `dev` → IAM credentials (no admin username/password at first) → create an IAM role with access to specific S3 buckets → create. Then **Query editor v2** → connect as a federated user.
 
 **Expanded:**
 
@@ -184,7 +210,7 @@ Q. What is ingress vs egress?
 
 A. (Teacher's definition) "Ingress basically refers to traffic that is coming into a system, as opposed to egress, which is traffic going out of a system." Used with `aws ec2 authorize-security-group-ingress` to let Glue workers talk to each other and to Redshift.
 
-**Expanded:** Security groups have **inbound (ingress)** and **outbound (egress)** rules. For Glue + Redshift: a security group with a **self-referencing** inbound rule (all TCP from the same group) so Glue workers can talk to each other, and inbound **port 5439** (Redshift's port) from Glue's group. See `Training 21.md` → Cloud Networking.
+**Expanded:** Security groups have **inbound (ingress)** and **outbound (egress)** rules. For Glue + Redshift: a security group with a **self-referencing** inbound rule (all TCP from the same group) so Glue workers can talk to each other, and inbound **port 5439** (Redshift's port) from Glue's group. See `Training 21.md` → Cloud Networking, which also has the **Security Group vs Network ACL** table (stateful, per resource, allow-only vs stateless, per subnet, allow and deny).
 
 ---
 
@@ -240,9 +266,61 @@ job.commit()                                         # saves the bookmark
 
 Q. Where did the live demo end?
 
-A. (Teacher's definition) The target table was created in the query editor, the Silver → Redshift Glue job was created and started, and it failed with "Could not find S3 endpoint or NAT gateway for subnet ID." "This is not an authentication problem. This is a networking problem, a low-level cloud setup problem." Too big to debug in 10 minutes, so it was carried over to the next class. "Frustrating problems like this that don't seem to make any sense are just a normal part of working on cloud services... They all have NAT gateways, they all have subnets and they all have annoying authentication problems. Even Google Cloud."
+A. (From class) The target table was created in the query editor, the Silver → Redshift Glue job was created and started, and it failed with "Could not find S3 endpoint or NAT gateway for subnet ID." "This is not an authentication problem. This is a networking problem, a low-level cloud setup problem." Too big to debug in 10 minutes, so it was carried over to the next class. "Frustrating problems like this that don't seem to make any sense are just a normal part of working on cloud services... They all have NAT gateways, they all have subnets and they all have annoying authentication problems. Even Google Cloud."
 
 **Expanded:** The Glue connection placed the job inside Redshift's private subnet, which had no route to S3. Fix: an S3 Gateway Endpoint (see `Training 21.md`).
+
+---
+
+# Lambda: Triggers, Retries and Idempotency
+
+Q. How do Lambda retries work, and why must a Lambda handler be idempotent?
+
+A. How retries happen depends on how the function is invoked. Because any invocation can run more than once, the handler must give the same result when repeated.
+
+**Expanded:**
+
+| Invocation type | Examples | Retries on error | Where failures go |
+|---|---|---|---|
+| **Synchronous** | CLI `aws lambda invoke`, API Gateway | None by Lambda; the caller sees the error and decides | Back to the caller |
+| **Asynchronous** | S3 event notifications, EventBridge, SNS | **2 retries** by default (configurable 0-2), event kept up to 6 hours | **On-failure destination** (SQS, SNS, EventBridge, another Lambda) or a dead-letter queue |
+| **Event source mapping** (polling) | Kinesis, DynamoDB Streams, SQS | Retries the batch until it succeeds or the record expires (configurable: max retries, bisect batch on error) | On-failure destination; for SQS, the queue's own DLQ |
+
+| Setting | Notes |
+|---|---|
+| Timeout | Default 3 s, max 15 minutes |
+| Memory | 128 MB-10 GB; CPU scales with memory |
+| Concurrency | **Reserved** caps or guarantees a function's share; **provisioned** keeps instances warm (no cold starts) |
+| Layers | Zip packages of shared libraries (e.g. `pandas`, `requests`) attached to functions |
+| Logging | `print`/`logging` output goes to CloudWatch log group `/aws/lambda/<function-name>` |
+
+**Idempotency in practice:** a retry after a timeout can write the same S3 file twice. Use deterministic keys (e.g. named by the snapshot timestamp, so a retry overwrites the same object), conditional writes, or a processed-IDs table in DynamoDB.
+
+**Interview line:** "Async invocations retry twice and then go to an on-failure destination or DLQ; stream sources retry the batch. Since events can be delivered more than once, I make handlers idempotent with deterministic output keys or a dedup table."
+
+---
+
+# EC2 Hands-On Basics
+
+Q. How do you connect to an EC2 instance and run a setup script at launch?
+
+A. SSH in with the key pair chosen at launch. Put startup commands in **user data**, which runs once on first boot.
+
+**Expanded:**
+
+```bash
+chmod 400 my-key.pem                                   # SSH refuses keys other users can read
+ssh -i my-key.pem ec2-user@<public-dns-or-ip>          # ec2-user on Amazon Linux; ubuntu on Ubuntu
+```
+
+| Piece | What to know |
+|---|---|
+| Key pair | The private `.pem` is downloaded once; AWS keeps only the public key |
+| Security group | Must allow inbound port 22 from your IP (not `0.0.0.0/0`) |
+| User data | A shell script run as root on first boot (install packages, pull code) |
+| Session Manager | SSH-free access through Systems Manager, with no port 22 open |
+
+The launch-page settings from class are in `Training 18.md` ("EC2: Extra Points from Class").
 
 ---
 

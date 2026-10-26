@@ -178,9 +178,13 @@ Need ETL/SQL to
 update summary
 ```
 
+---
+
 ## The Conceptual Distinction
 
-Teacher's definition: "A regular table stores data. A dynamic table stores the result of a query that Snowflake continually maintains according to a freshness target."
+Q. What is a Dynamic Table?
+
+A. (Teacher's definition) "A regular table stores data. A dynamic table stores the result of a query that Snowflake continually maintains according to a freshness target."
 
 ## "Why not just use a view?"
 
@@ -205,8 +209,12 @@ Dynamic table
 | **Regular table** | Yes, physically stored | No - frozen at creation/last manual refresh |
 | **View** | No - recalculates every query | Yes, but at the cost of recomputing from scratch each time it's queried |
 | **Dynamic table** | Yes, physically materialized | Yes - Snowflake automatically refreshes it to meet the declared `TARGET_LAG` |
+| **Materialized view** (not shown in class) | Yes | Yes - maintained automatically by Snowflake, always current, but limited to a **single table** (no joins) and needs Enterprise edition |
+| **Stream + Task** (not shown in class) | Yes (you write the target) | On a schedule - the Stream tracks changes, the Task runs your MERGE; most control, most code |
 
-Expanded: this three-way framing is what actually makes Dynamic Tables click - they're not just "another ETL feature," they're the answer to "I want a view's automatic freshness, but a table's physical/pre-computed performance, without hand-rolling a refresh pipeline myself." `TARGET_LAG` is the key new concept: it's a declared freshness *target* (e.g. `'1 minute'`), not a guarantee of instant updates - Snowflake decides how/when to refresh the underlying query to try to meet that target, trading off compute cost against staleness, which is also why a `WAREHOUSE` has to be specified (something has to actually run the refresh).
+Expanded: this three-way framing is what actually makes Dynamic Tables click - they're not just "another ETL feature," they're the answer to "I want a view's automatic freshness, but a table's physical/pre-computed performance, without hand-rolling a refresh pipeline myself." `TARGET_LAG` is the key new concept: it's a declared freshness *target* (e.g. `'1 minute'`), not a guarantee of instant updates - Snowflake decides how/when to refresh the underlying query to try to meet that target, trading off compute cost against staleness, which is also why a `WAREHOUSE` has to be specified (something has to actually run the refresh). Dynamic Tables also allow joins and chaining (one DT reading another), and refresh either incrementally or fully. Follow-up on what happens when `TARGET_LAG` is missed: `Training 17.md`.
+
+**Interview line (dynamic table vs materialized view vs Stream + Task):** "A materialized view is a single-table, always-current precomputation. A dynamic table is a declarative pipeline step: any SQL, joins included, kept within a target lag. Stream plus Task is the imperative version, where I write the MERGE and schedule it myself, for when I need full control."
 
 ---
 
@@ -214,25 +222,33 @@ Expanded: this three-way framing is what actually makes Dynamic Tables click - t
 
 ## REPL
 
-Teacher's definition: "REPL - a CLI environment that's designed for working with a programming language." "REPL stands for Read-Eval-Print-Loop."
+Q. What is a REPL?
+
+A. (Teacher's definition) "REPL - a CLI environment that's designed for working with a programming language." "REPL stands for Read-Eval-Print-Loop."
 
 Expanded: a REPL reads one expression you type, evaluates it immediately, prints the result, then loops back to read the next one - literally Read, Eval, Print, Loop. `python3` (bare, no script argument), the Scala `sbt console`, and `psql`'s own interactive prompt are all REPLs - each one is specifically for writing and immediately running code/queries in that particular language, one expression at a time, rather than running a whole program file at once.
 
+---
+
 ## TUI
 
-Teacher's definition: "TUI - Terminal User Interface - a CLI environment that's designed for interacting with a program through the CLI."
+Q. What is a TUI?
 
-Expanded: a TUI is a full, often visually-structured interface (menus, panels, keyboard navigation) rendered entirely in text inside a terminal - not line-by-line like a REPL, but closer to a graphical app's layout, just built from text characters instead of pixels. `beeline` and `htop`-style tools are examples of this general category - the distinction from a REPL is purpose: a REPL is for interactively running code in a language, a TUI is for interacting with a specific program's own interface (menus, navigation, live-updating views) without ever leaving the terminal.
+A. (Teacher's definition) "TUI - Terminal User Interface - a CLI environment that's designed for interacting with a program through the CLI."
+
+Expanded: a TUI is a full, often visually-structured interface (menus, panels, keyboard navigation) rendered entirely in text inside a terminal - not line-by-line like a REPL, but closer to a graphical app's layout, just built from text characters instead of pixels. `htop`, `k9s`, `lazygit` and `vim` are examples of this general category (`beeline`, Hive's JDBC SQL shell, is line-oriented, so it belongs with the REPL-style tools like `psql`) - the distinction from a REPL is purpose: a REPL is for interactively running code in a language, a TUI is for interacting with a specific program's own interface (menus, navigation, live-updating views) without ever leaving the terminal.
 
 | | REPL | TUI |
 |---|---|---|
 | Purpose | Interactively run code in a programming language | Interact with a specific program's own interface |
 | Interaction style | Type an expression, see its result, repeat | Navigate a text-rendered interface (menus, panels, keys) |
-| Examples | `python3`, `sbt console`, `psql` prompt | `htop`, text-based dashboards/navigators |
+| Examples | `python3`, `sbt console`, `psql` prompt, `beeline` | `htop`, `k9s`, `lazygit`, `vim` |
 
 ---
 
 # AWS IAM Policy Example - S3 Bucket Permissions
+
+Q. How do you write an IAM policy that allows S3 read/write but blocks deletes? (More IAM: `Training 19.md`.)
 
 ```json
 {
@@ -320,9 +336,84 @@ SELECT * FROM sales_summary_dynamic
 UNDROP TABLE sales_summary_dynamic;
 ```
 
+**Time Travel vs Fail-safe:** after the Time Travel period ends, **permanent** tables get a further **7 days of Fail-safe** (transient and temporary tables get none). Fail-safe data can't be queried by you; only Snowflake support can recover it, for disasters.
+
+| | Time Travel | Fail-safe |
+|---|---|---|
+| Length | 1 day default (up to 90 days on Enterprise+; max 1 day for transient/temporary tables) | 7 days after Time Travel ends (permanent tables only) |
+| Who can use it | You: `AT` / `BEFORE` / `UNDROP` / `CLONE ... AT` | Snowflake support only |
+| Purpose | Self-service recovery, audit, reproducing reports | Last-resort disaster recovery |
+
 **Why it matters, practically:**
 - Recovering from a bad `DELETE`/`UPDATE`, or an accidentally dropped table, without restoring from a backup
 - Auditing - "what did this table actually look like before yesterday's pipeline ran?"
 - Reproducing a report exactly as it appeared at a past point, for debugging or compliance
 
-**Not Snowflake-exclusive:** the same underlying idea is behind Delta Lake's and Apache Iceberg's own time travel features (`Training 13.md`'s OTF coverage) - both keep a log of every change to a table and let you query (or roll back to) any prior snapshot by timestamp or version number. Snowflake just makes it a built-in table feature with zero setup, where Delta/Iceberg require the table format itself to be managing that versioned log.
+**Not Snowflake-exclusive:** the same underlying idea is behind Delta Lake's and Apache Iceberg's own time travel features (`Training 13.md`, "Delta and Iceberg"; Delta operations in `Training 29.md`) - both keep a log of every change to a table and let you query (or roll back to) any prior snapshot by timestamp or version number. Snowflake just makes it a built-in table feature with zero setup, where Delta/Iceberg require the table format itself to be managing that versioned log.
+
+---
+
+# Snowflake Architecture (interview core)
+
+(Not covered in class; roadmap topics for "Snowflake Introduction", added for interviews.)
+
+Q. Explain Snowflake's architecture.
+
+Expanded: three layers, each scaling independently:
+
+| Layer | What it is |
+|---|---|
+| Storage | Table data stored as compressed, columnar **micro-partitions** (about 50-500 MB uncompressed each) in the cloud provider's object storage; immutable, with min/max metadata per column used for pruning |
+| Compute | **Virtual warehouses**: independent clusters that run queries; many can read the same data without contending |
+| Cloud services | The "brain": authentication, metadata, query optimizer, transactions, access control, result cache |
+
+**Interview line:** "Snowflake separates storage, compute and services. Data sits once in micro-partitions on object storage, any number of warehouses can query it independently, and the services layer handles metadata, optimization and security, so I can scale compute without copying data."
+
+---
+
+Q. What caches does Snowflake have?
+
+Expanded:
+
+| Cache | Where | Lasts | Notes |
+|---|---|---|---|
+| Result cache | Cloud services | 24 hours (renewed on reuse, up to 31 days) | Identical query + unchanged data returns instantly, no warehouse needed, across users with the same role access |
+| Warehouse (local disk) cache | The warehouse's SSD | Until the warehouse suspends | Speeds repeat scans of the same micro-partitions |
+| Metadata cache | Cloud services | Always | `COUNT(*)`, `MIN`/`MAX` on a table can be answered without a warehouse |
+
+---
+
+Q. What is zero-copy cloning?
+
+Expanded: `CREATE TABLE dev_sales CLONE prod.sales;` (also for schemas and databases) copies only **metadata**: the clone points at the same micro-partitions, so it's instant and free until either side changes data; changed data gets new micro-partitions (copy-on-write). Typical use: a full dev/test environment from production in seconds. Combined with Time Travel: `CLONE ... AT (TIMESTAMP => ...)`.
+
+---
+
+Q. When do you scale a warehouse up vs out?
+
+Expanded: each size up (XS → S → M ...) doubles compute and credits per hour.
+
+| | Scale up (bigger size) | Scale out (multi-cluster) |
+|---|---|---|
+| Fixes | Slow, complex queries; spilling to disk | Queuing from many concurrent users |
+| How | `ALTER WAREHOUSE wh SET WAREHOUSE_SIZE = 'LARGE'` | `MIN_CLUSTER_COUNT` / `MAX_CLUSTER_COUNT` (Enterprise), Standard (start clusters fast) or Economy (save credits) scaling policy |
+
+Set **auto-suspend** (e.g. 60 seconds) and **auto-resume** so idle warehouses cost nothing.
+
+**Interview line:** "Scale up for a heavy query, scale out for many users. A bigger warehouse makes one query faster; multi-cluster stops queries queuing at peak times."
+
+---
+
+Q. How do you load data into Snowflake?
+
+Expanded: files go into a **stage** - internal (Snowflake-managed, upload with `PUT` / `snow stage copy`) or external (an S3/ADLS/GCS location via a storage integration) - then `COPY INTO` loads them:
+
+```sql
+CREATE FILE FORMAT pq TYPE = PARQUET;
+CREATE STAGE market_stage FILE_FORMAT = pq;          -- internal stage
+COPY INTO raw.market_ticks
+  FROM @market_stage
+  MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE;          -- already-loaded files are skipped (load metadata kept 64 days)
+```
+
+**Snowpipe** runs the same `COPY` automatically when new files land (event notifications, serverless); **Snowpipe Streaming** writes rows directly with no files. Streams and Tasks are compared with Dynamic Tables above.

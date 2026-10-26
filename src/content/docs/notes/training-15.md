@@ -9,7 +9,11 @@ Teacher: Evan Flint
 
 Syllabus Day 16 (per file numbering) - topic: Cloud data platforms, cloud storage and compute (preparation for Snowflake).
 
+The roadmap's topic for this day, **Spark Structured Streaming** (output modes, triggers, windows, watermarks, state, checkpoints, exactly-once), is covered in `Training 14.md` ("Spark Structured Streaming: Core Concepts"), next to the streaming labs.
+
 # Unified Data Platform
+
+Q. What is a unified data platform?
 
 Expanded: a **unified data platform** handles a company's whole data lifecycle (ingestion, storage, processing, analytics, machine learning and governance) in one place, on one shared copy of the data, instead of a chain of separate tools that each keep their own copy.
 
@@ -36,7 +40,9 @@ Why it matters: one source of truth, less data movement (lower cost, fresher dat
 
 # Cloud Providers: AWS, Azure, GCP
 
-Teacher's list: "AWS / Azure / GCP"
+Q. Who are the main cloud providers, and how do their data services map to each other?
+
+A. (Teacher's list) "AWS / Azure / GCP"
 
 Expanded: the three big public cloud providers. They offer the same building blocks under different names; Snowflake and Databricks run on all three (a Snowflake account is created in one of them, and its storage lives in that cloud).
 
@@ -57,11 +63,17 @@ Expanded: the three big public cloud providers. They offer the same building blo
 
 # Object Storage
 
-Teacher's definitions: "Object stores are there to be easier to store long term, persistent data on a cloud service." "Object stores are all serverless." "Object stores store their data in bucket and the buckets contain either a actual filesystem or simulated filesystem."
+Q. What is object storage, and why is data engineering built on it?
+
+A. (Teacher's definitions) "Object stores are there to be easier to store long term, persistent data on a cloud service." "Object stores are all serverless." "Object stores store their data in bucket and the buckets contain either a actual filesystem or simulated filesystem."
 
 Teacher's clarification: "The buckets contain either an actual simulated file system (in ADLS) OR they contain a simulated file system - it looks and feels like one when you are using it, but it is in fact just an abstraction that is created by the system (AWS S3)."
 
 (In context, the ADLS case is the **actual** file system: real directories via the hierarchical namespace. The S3 case is the **simulated** one: folders are an abstraction built from object-key prefixes.)
+
+---
+
+Q. What is the difference between a flat and a hierarchical namespace?
 
 **Actual vs. simulated filesystem:**
 
@@ -75,6 +87,8 @@ Teacher's clarification: "The buckets contain either an actual simulated file sy
 | Examples | S3 (standard buckets), Azure Blob Storage, GCS (default) | **ADLS Gen2** (hierarchical namespace enabled), GCS with hierarchical namespace, S3 **directory buckets** (S3 Express One Zone) |
 
 Why it matters: Spark, Hive and Delta write to temporary folders and rename them into place when a job commits. On a simulated filesystem that rename is a slow copy, and a crash halfway leaves partial data, which is why analytics-focused storage (ADLS Gen2) offers a real filesystem, and why table formats like Delta and Iceberg avoid relying on renames by tracking which files belong to each table version in a transaction log.
+
+**Interview line (renames on S3):** "S3 has no real directories, so renaming a folder means copying and deleting every object: slow and not atomic. That breaks Spark's classic write-to-temp-then-rename commit, which is why we use the S3A committers, or table formats like Delta and Iceberg that commit by writing a log entry instead of renaming files."
 
 Expanded: object storage keeps data as **objects** in a flat container called a **bucket**. Each object has a **key** (its unique name, e.g. `market-lake/event_date=2026-09-30/event_hour=21/part-0001.parquet`), the **data** itself, and **metadata**. The `/` in a key is just part of the name; tools display prefixes as folders, which is why Hive-style partition paths work the same way in a bucket as on a local disk.
 
@@ -130,7 +144,9 @@ Used as GCP's data-lake layer: BigQuery loads from it or queries it in place (ex
 
 # Remote Instances (Cloud Virtual Machines)
 
-Teacher's definition: "Remote Instance = Virtual Machine hosted on the cloud"
+Q. What is a remote instance?
+
+A. (Teacher's definition) "Remote Instance = Virtual Machine hosted on the cloud"
 
 Teacher's examples: "AWS EC2", "Azure Virtual Machines", "Google App Engine"
 
@@ -157,7 +173,9 @@ Why data engineers use them: running your own tools (Kafka, Spark, Airflow, Post
 
 # EBS (AWS Elastic Block Store)
 
-Teacher's definition: "EBS - AWS Elastic Block Store - basically persistent storage that can be attached to an EC2 instance"
+Q. What is EBS, and how does it compare with S3 and EFS?
+
+A. (Teacher's definition) "EBS - AWS Elastic Block Store - basically persistent storage that can be attached to an EC2 instance"
 
 Expanded: EBS is **block storage**: the virtual hard drive of a cloud VM. The instance sees a raw disk, formats it with a file system and mounts it.
 
@@ -229,7 +247,9 @@ Example prompts from the docs:
 
 # Workspaces
 
-Teacher's definition: "A workspace in Snowflake and Databricks is a virtual location within your Snowflake or Databricks environment where you can hold resources, which are isolated from all other resources on the platfor[m]." "So basically, workspaces allow you to have projects which are isolated from each other."
+Q. What is a workspace in Snowflake and Databricks?
+
+A. (Teacher's definition) "A workspace in Snowflake and Databricks is a virtual location within your Snowflake or Databricks environment where you can hold resources, which are isolated from all other resources on the platfor[m]." "So basically, workspaces allow you to have projects which are isolated from each other."
 
 Expanded: a workspace is a **container for a project**: its code, files and settings live together and are kept separate from other projects on the same platform, so teams and projects don't interfere with each other. The word means slightly different things on the two platforms:
 
@@ -251,6 +271,8 @@ Expanded: a workspace is a **container for a project**: its code, files and sett
 ---
 
 # Semantic Views
+
+Q. What is a semantic view?
 
 Expanded: a **semantic view** is a Snowflake schema-level object that stores the **business meaning** of data next to the tables: which tables relate to each other, what business terms mean, and how metrics are calculated. Humans, BI tools and AI (Cortex Analyst, CoCo) can then ask questions in business terms and get **consistent answers**.
 
@@ -336,7 +358,7 @@ Sizes X-Small → 6X-Large, each size roughly doubling power and credit cost. Wa
 | UDFs / stored procedures | Custom functions and procedures in SQL, Python, Java, JavaScript or Scala | Spark UDFs |
 | **Streams** | Track changes (inserts, updates, deletes) on a table: change data capture | Kafka offsets: "what's new since I last read?" |
 | **Tasks** | Scheduled SQL/procedure runs, chainable into pipelines (DAGs) | cron / Airflow |
-| **Dynamic Tables** | Declare the result as a query plus a freshness target (`TARGET_LAG = '5 minutes'`); Snowflake keeps it updated incrementally | A Spark Structured Streaming job written as SQL |
+| **Dynamic Tables** (detail: `Training 16.md`) | Declare the result as a query plus a freshness target (`TARGET_LAG = '5 minutes'`); Snowflake keeps it updated incrementally | A Spark Structured Streaming job written as SQL |
 | **Snowpipe / Snowpipe Streaming** | Serverless continuous loading of files / rows | The `?` in Kafka → Spark/Flink → Parquet → ? → Snowflake |
 | Snowpark Container Services | Run Docker containers (apps, ML models, APIs) on Snowflake-managed compute | Docker, inside Snowflake |
 | Cortex AI functions | LLM functions in SQL (`AI_COMPLETE`, sentiment, summarize, translate), Cortex Analyst | AI inside the database |
@@ -368,7 +390,9 @@ Under privacy laws such as GDPR, the **data controller** decides why and how per
 
 # Snowpark
 
-Teacher's definition: "Snowpark - Snowflake's code execution environment, in which it is possible to use a Spark job"
+Q. What is Snowpark?
+
+A. (Teacher's definition) "Snowpark - Snowflake's code execution environment, in which it is possible to use a Spark job"
 
 Expanded: **Snowpark** lets you write data processing code in **Python, Java or Scala** (not just SQL) that runs **inside Snowflake**, on Snowflake's virtual warehouses, next to the data. The data never has to be pulled out to a separate Spark cluster.
 
@@ -395,11 +419,15 @@ result.show()   # executes now, inside Snowflake
 | API | `spark.read...`, DataFrames, lazy evaluation | `session.table(...)`, DataFrames, lazy evaluation |
 | Connector headaches from class (`--packages`, Scala versions) | Yes | No |
 
+**Interview nuance:** Snowpark **DataFrame** operations are pushed down: compiled to SQL and run by Snowflake's engine, so they are as fast as SQL. Snowpark **Python UDFs and stored procedures** instead run row or batch logic in a sandboxed Python runtime on the warehouse, which is more flexible but slower; prefer DataFrame operations where possible. Snowflake architecture and warehouses: `Training 16.md`.
+
 ---
 
 # dbt (data build tool)
 
-Teacher's definition: "DBT - the major ELT tool that we use with Snowflake"
+Q. What is dbt?
+
+A. (Teacher's definition) "DBT - the major ELT tool that we use with Snowflake"
 
 Expanded: **dbt** handles the **T (Transform)** in **ELT**: data is first **E**xtracted and **L**oaded raw into the warehouse (Snowpipe, `COPY INTO`), then **dbt transforms it inside the warehouse** using SQL. dbt doesn't move data and has no compute of its own: it turns your SQL into the right `CREATE TABLE / VIEW` statements and runs them on Snowflake's warehouses.
 
@@ -435,6 +463,8 @@ WHERE sale_id IS NOT NULL
 | dbt Projects on Snowflake | Run dbt natively inside Snowflake (in Workspaces; CoCo can scaffold projects) |
 
 Why it's the standard with Snowflake: transformations are plain SQL under **version control** (Git), with tests, documentation and lineage. It brings software-engineering practice (CI/CD, code review, environments) to the Bronze → Silver → Gold layers.
+
+This is a short intro; the hands-on dbt + Snowflake class (models, `ref`/`source`, tests, materializations) is in `Training 17.md`.
 
 ## Installing dbt (class follow-along)
 

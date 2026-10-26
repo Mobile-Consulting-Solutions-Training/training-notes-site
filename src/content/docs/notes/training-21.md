@@ -113,13 +113,11 @@ A. (Teacher's definition)
 
 ---
 
-# Agent Generated Notes (from Class Recording, live)
-
-Source: near-live transcript of today's OBS recording (`transcriptions/Training 21 – 2026-10-09 13-07-21/live_transcript.md`), Whisper "small", no speaker labels. Timestamps are from the start of the recording.
+# Class Walkthrough: Gold Layer in Redshift
 
 ---
 
-## Class logistics (0:00–0:12)
+## Class logistics
 
 - **Morning evaluations:** students compared notes on today's evaluation. Questions reported: Python list vs set vs dict, generators, garbage collection/memory management, higher-order functions (`map`/`filter`/`reduce`), pattern matching (`match`/`case`, Python's switch), a coding challenge (find duplicates in a list and return them as a list), Hadoop/HDFS, YARN, RDD vs DataFrame vs Dataset, and cache vs persist. Evan: **decorators** are a "basic competency question" in professional programming because they're used everywhere; **pattern matching** rarely comes up in interviews. On answers: "more detail is generally better."
 - **Homework status around the room:** one student got the Glue → Redshift JDBC connection working; one finished Bronze → Silver and is working on Silver → Redshift; one loaded **S3 → Redshift directly** without Glue; one sent data from Spark run **locally** into Redshift because EventBridge was blocked.
@@ -127,7 +125,7 @@ Source: near-live transcript of today's OBS recording (`transcriptions/Training 
 
 ---
 
-## Why Glue and Redshift share a VPC (0:13–0:20)
+## Why Glue and Redshift share a VPC
 
 Evan's explanation of the diagram (see Cloud Networking above):
 
@@ -140,7 +138,7 @@ Evan's explanation of the diagram (see Cloud Networking above):
 
 ---
 
-## Evan on the networking terms (0:20–0:26)
+## Evan on the networking terms
 
 | Term | What Evan said | Accuracy note |
 |---|---|---|
@@ -154,7 +152,7 @@ Evan: "There's a distance between just memorizing the definitions and being able
 
 ---
 
-## The error from yesterday's class (0:28–0:30)
+## The error from yesterday's class
 
 Yesterday's Glue → Redshift job failed with:
 
@@ -170,13 +168,13 @@ Reason: Could not find S3 endpoint or NAT gateway for subnetId: <subnet-id>
 
 ---
 
-## Gap in the recording (0:40–1:08, about 13:47–14:15)
+## Creating the S3 Gateway Endpoint
 
-OBS lost its audio at about 13:47 and then crashed at 14:03. The recording restarted at 14:15. Whatever Evan did in that gap (most likely creating the **S3 Gateway Endpoint** that fixed the networking error) isn't captured here. Fill it in from Evan's posted class video.
+(The S3 Gateway Endpoint was created at this point; see Cloud Networking above.)
 
 ---
 
-## Next Glue run: networking fixed, now an IAM error (recording 2, 0:01–0:05)
+## Next Glue run: networking fixed, now an IAM error
 
 - Running the Silver → Redshift Glue job again gave a **different** error, so "perhaps the networking part is resolved." Glue now got far enough to **write temporary data to S3 for the Redshift load** (the TempDir) and was denied `s3:PutObject` there.
 - Evan: "We've got an **IAM authorization** problem, not a database authentication problem."
@@ -205,7 +203,7 @@ A. (Teacher's definition) "Authentication means that you're checked to see if yo
 
 ---
 
-## Student permissions update: EventBridge Scheduler granted (recording 2, 0:05–0:11)
+## Student permissions update: EventBridge Scheduler granted
 
 While the Glue job reran, Evan edited the **student user group's policy** (IAM → Policies → the group's policy → edit):
 
@@ -218,11 +216,11 @@ While the Glue job reran, Evan edited the **student user group's policy** (IAM �
 | `scheduler:CreateSchedule` denied | Students can create and edit schedules |
 | Couldn't pass a role to the Scheduler | `iam:PassRole` allowed when the role is passed to `scheduler.amazonaws.com` |
 
-Still **not** granted (as far as the recording shows): `iam:CreateRole` / `iam:CreatePolicy`. So a student can attach an *existing* role to a schedule but can't create a new one.
+Still **not** granted (as of this class): `iam:CreateRole` / `iam:CreatePolicy`. So a student can attach an *existing* role to a schedule but can't create a new one.
 
 ---
 
-## Silver → Gold works: first data in Redshift (recording 2, 0:10–0:16)
+## Silver → Gold works: first data in Redshift
 
 - A student confirmed the Scheduler permissions worked. "Since it's a group policy, it should now work for everybody."
 - The **Silver → Redshift Glue job succeeded.** In Redshift → namespace `citibike-ns` → **Query editor v2** → `dev` → `public` there's now one table, `citibike_station_snapshot`:
@@ -239,7 +237,7 @@ SELECT * FROM public.citibike_station_snapshot;
 
 ---
 
-## Student permissions update: Redshift Query editor v2 (recording 2, 0:16–0:22)
+## Student permissions update: Redshift Query editor v2
 
 Evan: "The group policy grants `redshift` and `redshift-serverless`, but **Redshift Query editor v2 is a separate IAM prefix called `sqlworkbench`**." Students were being denied `sqlworkbench:GetAccountInfo` and `sqlworkbench:GetUserInfo`.
 
@@ -256,7 +254,7 @@ So students can now open Query editor v2 and run SQL against Redshift Serverless
 
 ---
 
-## Student permissions update: Secrets Manager (recording 2, 0:22–0:27)
+## Student permissions update: Secrets Manager
 
 - After `tag:*`, most students could open the query editor. One still got an error, because they had set up their Redshift connection the **Secrets Manager** way (Evan went the username/password route after Secrets Manager frustrated him yesterday).
 - Evan added **`secretsmanager:*`** to the student group: "there's no reason to deny you access."
@@ -289,7 +287,7 @@ A. (Teacher's definition) A student noted that what's one line here "might take 
 
 ---
 
-## Plan for the rest of class (recording 2, 0:34–0:36, ~14:50)
+## Plan for the rest of class
 
 Break at about 14:50. Evan's goal before class ends:
 
@@ -301,12 +299,12 @@ Break at about 14:50. Evan's goal before class ends:
 
 ---
 
-## Hands-on: querying Evan's table as a student (Alex, ~14:50)
+## Hands-on: querying Evan's table as a student
 
 | Attempt | Result | Lesson |
 |---|---|---|
 | `SELECT * FROM native_databases;` | `relation "native_databases" does not exist` | "native databases" is a **sidebar folder label**, not a table |
-| `SELECT * FROM public.citibike_station_snapshot` while connected to `arturo-gold-wg` | `relation ... does not exist` | The query runs on the workgroup in the **editor's dropdown**, not the one clicked in the sidebar. Each workgroup is a separate warehouse |
+| `SELECT * FROM public.citibike_station_snapshot` while connected to another student's workgroup (`<student>-gold-wg`) | `relation ... does not exist` | The query runs on the workgroup in the **editor's dropdown**, not the one clicked in the sidebar. Each workgroup is a separate warehouse |
 | Same query on `citibike-wg` (federated user) | `permission denied for relation citibike_station_snapshot` | IAM let you **in**; Redshift's **own** database permissions block the **table** |
 
 **Two layers of permissions in Redshift:**
@@ -325,7 +323,7 @@ GRANT SELECT ON public.citibike_station_snapshot TO PUBLIC;   -- PUBLIC = every 
 
 ---
 
-## Building the star schema (recording 2, 0:51–, ~15:06)
+## Building the star schema
 
 - Approach: "forge ahead and get a star schema going and not worry too much about the actual population of the data just yet." Setting up an incremental load into Redshift (to bring in more data) is "better reserved for next week." "The star schema is going to be the quickest route between here and where we want to be."
 - **Profiling the data first.** The table had 100 rows. Rather than only `SELECT *`, Evan ran a profiling query:
@@ -346,7 +344,7 @@ Result: **100 rows, 97 stations**, earliest snapshot on Oct 7. (The column names
 
 ---
 
-## Data checks before modeling (recording 2, 0:54–0:59)
+## Data checks before modeling
 
 - **Data range:** earliest snapshot Oct 7, 6:28 PM; latest Oct 8, 8:55 PM.
 - **Duplicate check:**
@@ -422,7 +420,7 @@ Questions this answers: Which stations are empty most often? How does availabili
 
 ---
 
-## Creating the Gold schema and tables (recording 2, 1:00–1:06)
+## Creating the Gold schema and tables
 
 - The star picture is conceptual: "in the query editor it's just going to be a list of tables. Some are labeled fact and others dimension."
 - **Simplification for today:** use the natural `station_id` as the station dimension's key (no surrogate key).
@@ -432,22 +430,38 @@ Questions this answers: Which stations are empty most often? How does availabili
 CREATE SCHEMA IF NOT EXISTS gold;
 
 CREATE TABLE IF NOT EXISTS gold.dim_station (
-    station_id   VARCHAR(...) PRIMARY KEY,   -- a string, not an integer
+    station_id   VARCHAR(64) PRIMARY KEY,   -- a string, not an integer
     station_name VARCHAR(500),
-    capacity     INT
-);
+    capacity     BIGINT
+)
+DISTSTYLE ALL;                              -- small dimension: full copy on every node
 
-CREATE TABLE IF NOT EXISTS gold.dim_date ( ... );
+CREATE TABLE IF NOT EXISTS gold.dim_date (
+    date_key      INTEGER PRIMARY KEY,      -- YYYYMMDD, e.g. 20261008
+    calendar_date DATE,
+    year_number   INTEGER,
+    month_number  INTEGER,
+    day_number    INTEGER,
+    day_of_week   INTEGER                   -- 0 = Sunday ... 6 = Saturday
+)
+DISTSTYLE ALL;
 
 CREATE TABLE IF NOT EXISTS gold.fact_station_snapshot (
-    station_id, date_key, snapshot_ts,
-    bikes_available, ebikes_available, docks_available,
-    utilization_pct, is_empty, is_full, is_operational
+    station_id       VARCHAR(64),
+    date_key         INTEGER,
+    snapshot_ts      TIMESTAMP,
+    bikes_available  BIGINT,
+    ebikes_available BIGINT,
+    docks_available  BIGINT,
+    utilization_pct  DOUBLE PRECISION,
+    is_empty         BOOLEAN,
+    is_full          BOOLEAN,
+    is_operational   BOOLEAN
 )
-DISTKEY (...) SORTKEY (...);
+DISTKEY (station_id) SORTKEY (snapshot_ts);
 ```
 
-(Column list as Evan read it aloud; exact types/keys were on screen.) A `CREATE TABLE` returns **0 rows**. "It shouldn't return any rows, it should just create a table with a schema."
+(Column names and types match the Gold tables as later confirmed in Query editor v2. The `DISTSTYLE ALL` and `DISTKEY`/`SORTKEY` choices are a sensible default for this schema; check them against your own class code.) A `CREATE TABLE` returns **0 rows**. "It shouldn't return any rows, it should just create a table with a schema."
 
 ---
 
@@ -461,7 +475,7 @@ A. (Teacher's definition, after asking AI) "The fact table typically references 
 
 Q. Why didn't `DESCRIBE TABLE gold.dim_date` work?
 
-A. (Teacher's definition) It gave a syntax error. Evan moved on.
+A. Redshift has no `DESCRIBE` command, so it gave a syntax error. Use `information_schema.columns` or `pg_table_def` instead.
 
 **Expanded:** Redshift (based on PostgreSQL) has **no `DESCRIBE` command**. That's MySQL/Snowflake/Hive syntax. In Redshift, use:
 
@@ -492,6 +506,70 @@ A. (Teacher's definition) "Distribution keys and sort keys are two ways of organ
 
 Distribution styles: `KEY` (by a column), `ALL` (a full copy on every node, good for small dimension tables), `EVEN` (round-robin), `AUTO` (Redshift decides; the default).
 
+**Interview line:** "I set the DISTKEY on the column the big fact table joins on most, so joins happen locally without redistribution, and use DISTSTYLE ALL for small dimensions. The SORTKEY goes on the column I filter by most, usually the timestamp, so range filters skip blocks. If I'm unsure, I start with AUTO and check `EXPLAIN` for redistribution steps."
+
+---
+
+Q. How do you upsert (incrementally load) into Redshift?
+
+A. Load the new batch into a **staging table** with `COPY`, then `MERGE` it into the target (or, the older pattern, delete the matching keys and insert in one transaction).
+
+**Expanded:**
+
+```sql
+-- 1. Stage the new batch
+CREATE TEMP TABLE stage (LIKE gold.fact_station_snapshot);
+COPY stage FROM 's3://<bucket>/silver/station_status/batch=<id>/'
+IAM_ROLE '<redshift-role-arn>' FORMAT AS PARQUET;
+
+-- 2a. MERGE (supported in Redshift since 2023)
+MERGE INTO gold.fact_station_snapshot
+USING stage s
+ON gold.fact_station_snapshot.station_id = s.station_id
+   AND gold.fact_station_snapshot.snapshot_ts = s.snapshot_ts
+WHEN MATCHED THEN UPDATE SET bikes_available = s.bikes_available,
+                             docks_available = s.docks_available
+WHEN NOT MATCHED THEN INSERT VALUES (s.station_id, s.date_key, s.snapshot_ts,
+    s.bikes_available, s.ebikes_available, s.docks_available,
+    s.utilization_pct, s.is_empty, s.is_full, s.is_operational);
+
+-- 2b. Older equivalent: delete + insert in one transaction
+BEGIN;
+DELETE FROM gold.fact_station_snapshot USING stage s
+WHERE gold.fact_station_snapshot.station_id = s.station_id
+  AND gold.fact_station_snapshot.snapshot_ts = s.snapshot_ts;
+INSERT INTO gold.fact_station_snapshot SELECT * FROM stage;
+COMMIT;
+```
+
+| Load pattern | When |
+|---|---|
+| Truncate-and-load (this class) | Small tables, full refresh is cheap |
+| Append only | Immutable events with no duplicates possible |
+| Staging + MERGE / delete-insert | New and changed rows; reruns must not duplicate |
+
+The full incremental version (landing table, checkpoint, stored procedure) was built in `Training 24.md`.
+
+**Interview line:** "I COPY the batch into a staging table, then MERGE on the business key, updating matches and inserting new rows, all in one transaction. That makes the load idempotent, so rerunning a batch doesn't create duplicates."
+
+---
+
+Q. How does Glue handle schema changes and messy types?
+
+A. With DynamicFrame transforms (`resolveChoice`, `ApplyMapping`) in the job, and with the crawler's schema-change policy in the Data Catalog.
+
+**Expanded:**
+
+| Tool | What it does | Example |
+|---|---|---|
+| `resolveChoice` | Fixes a column that arrived with more than one type (a "choice" type) | `dyf.resolveChoice(specs=[("capacity", "cast:long")])` |
+| `ApplyMapping` | Renames, retypes and selects columns in one step | `("num_bikes_available", "long", "bikes_available", "int")` |
+| `relationalize` | Flattens nested JSON into flat tables | Nested arrays become child tables |
+| Crawler schema-change policy | What the crawler does when the schema changes: **update** the table, **log** the change only, or ignore; and whether to delete or mark tables for removed data | Use "log" for Gold-facing tables so a bad file can't silently change the schema |
+| Explicit schema (`StructType`) | Avoids inference surprises entirely | What fixed the streaming job in `Training 22.md` |
+
+---
+
 ---
 
 Q. What's the difference between DELETE, TRUNCATE and DROP? (common interview question)
@@ -514,7 +592,7 @@ A. (Teacher's definition) "DELETE removes data, does not remove table structure.
 
 ---
 
-## Populating dim_station: one row per station (recording 2, 1:08–1:12)
+## Populating dim_station: one row per station
 
 ```sql
 TRUNCATE TABLE gold.dim_station;
@@ -543,7 +621,7 @@ A. (Teacher's definition) "QUALIFY filters the results of a window function, muc
 
 **This is the classic "latest record per key" (deduplication) pattern.** `PARTITION BY station_id` restarts the numbering for each station; `ORDER BY snapshot_ts DESC` makes #1 the most recent; `= 1` keeps just that row. So each station's *current* name and capacity go into the dimension.
 
-QUALIFY works in **Redshift, Snowflake, BigQuery and Databricks**, but **not** PostgreSQL or MySQL. There you wrap it in a subquery/CTE:
+QUALIFY works in **Redshift, Snowflake, BigQuery and Databricks**, but **not** PostgreSQL or MySQL. (Redshift only added QUALIFY in 2023, so older Redshift tutorials say it isn't supported.) There you wrap it in a subquery/CTE:
 
 ```sql
 SELECT station_id, station_name, capacity
@@ -570,7 +648,7 @@ WHERE rn = 1;
 
 ---
 
-## Populating dim_date (recording 2, 1:15–1:18)
+## Populating dim_date
 
 Columns: `date_key`, `calendar_date`, `year_number`, `month_number`, `day_number`, `day_of_week`.
 
@@ -589,7 +667,7 @@ FROM public.citibike_station_snapshot
 WHERE snapshot_ts IS NOT NULL;
 ```
 
-(Reconstructed from Evan's walkthrough; the exact expressions were on screen.)
+(Approximate; check against the class code.)
 
 Q. What does SELECT DISTINCT do, and why use it here instead of QUALIFY?
 
@@ -614,7 +692,7 @@ A. (Teacher's definition) "SELECT DISTINCT is a SQL command that will allow you 
 
 ---
 
-## Populating the fact table (recording 2, 1:19–1:24)
+## Populating the fact table
 
 `TRUNCATE` first, then a long `INSERT ... SELECT` from `public.citibike_station_snapshot`:
 
@@ -635,7 +713,7 @@ Filters: `WHERE station_id IS NOT NULL AND snapshot_ts IS NOT NULL`, plus `QUALI
 
 ---
 
-## Validating the star schema (recording 2, 1:24–1:30)
+## Validating the star schema
 
 With one fact table and two dimensions, `gold` holds "a simple star schema residing in our data warehouse." Before analyzing it, Evan ran three **validation** queries:
 
@@ -688,7 +766,7 @@ These three checks (counts, orphans, duplicates) are a reusable **data-quality c
 
 ---
 
-## Evan's check-in questions (recording 2, 1:30–1:36)
+## Evan's check-in questions
 
 Q. Why run the validation queries?
 
@@ -702,13 +780,13 @@ Q. What's the rationale for organizing a warehouse as a star schema (fact + dime
 
 A. (Teacher's definition) A student: "for organizing analytical and business data properly so we can quickly search up what we need," with "simpler query logic." Evan wanted more: "It's a **dimensional data model, which is basically the gold standard for how to organize analytical data**. The stuff that is most centrally important... is stored in the fact table, which is conceptually at the center of the schema. Information that helps us expand on the facts is contained in the various dimension tables. When we're analyzing, the central information is in the fact table, and anything that relates the fact table to anything else, we can achieve by joining the fact table with a dimension table," or with other SQL operations like UNION ALL.
 
-**Expanded:** The fuller answer interviewers want: measurements at a declared **grain** go in a narrow fact table; descriptive context goes in dimensions. That gives **no repeated descriptions** (stored once, changed once), **business logic defined once** (weekend, borough, rush hour), **simple, predictable queries** (fact + joins + group by), **speed** on columnar MPP warehouses (narrow facts, small dimensions copied to every node), **consistent answers** across teams (conformed dimensions) and **managed history** (slowly changing dimensions). Full detail: `walkthroughs/Deep Dive - Star Schema (Facts and Dimensions).md`.
+**Expanded:** The fuller answer interviewers want: measurements at a declared **grain** go in a narrow fact table; descriptive context goes in dimensions. That gives **no repeated descriptions** (stored once, changed once), **business logic defined once** (weekend, borough, rush hour), **simple, predictable queries** (fact + joins + group by), **speed** on columnar MPP warehouses (narrow facts, small dimensions copied to every node), **consistent answers** across teams (conformed dimensions) and **managed history** (slowly changing dimensions). Full detail: [Deep Dive - Star Schema](/training-notes-site/walkthroughs/star-schema-deep-dive/). The dimensional modeling Q&As (Kimball, star vs snowflake, facts and dimensions) are in `Training 5.md` ("Dimensional Schemas").
 
 ---
 
 # Analytical Queries on the Star Schema
 
-## Query 1: Which stations have the most bikes available? (recording 2, 1:53–2:00)
+## Query 1: Which stations have the most bikes available?
 
 Evan: "If I'm looking for a bike, which station am I most likely to actually find one at?"
 
@@ -726,7 +804,7 @@ ORDER BY avg_bikes_available DESC
 LIMIT 15;
 ```
 
-(Reconstructed from Evan's walkthrough; exact on-screen text may differ slightly.)
+(Approximate; check against the class code.)
 
 How Evan read it:
 - **Aliases:** `f` = the fact table, `s` = `dim_station` (same as in the validations). Name and capacity come from the **dimension**; the numbers come from the **fact**.
@@ -758,7 +836,7 @@ Evan then looked up the top station on Google Maps (Queens) to show how a query 
 
 ---
 
-## Query 2: Which stations are most frequently empty? (recording 2, 2:03–)
+## Query 2: Which stations are most frequently empty?
 
 "The opposite query: where are we most likely to come up short if we walk over to get a bike and find it's not there?"
 
@@ -774,7 +852,7 @@ GROUP BY s.station_id, s.station_name
 ORDER BY pct_observations_empty DESC;
 ```
 
-(Reconstructed; exact text was on screen.)
+(Approximate; check against the class code.)
 
 Q. What is CASE WHEN?
 
@@ -802,7 +880,7 @@ END
 
 ---
 
-**Running Query 2 (recording 2, 2:06–2:11):**
+**Running Query 2:**
 - First run failed: **"The current limit of three sessions has been reached."** The query editor allows only a few open sessions (tabs with *Isolated session* on). Fix: close tabs you're done with, or reuse one tab and comment out old queries with **Ctrl + /** (Cmd + / on Mac).
 - With `HAVING COUNT(*) >= 2`, it returned the **same three stations** as Query 1 (the only ones with 2+ snapshots). Evan **removed the HAVING** to see all stations.
 - Result: several stations were empty in **100%** of their observations: **Grand Army Plaza & Plaza St W**, **Fort Liberty Ferry Terminal**, **St Johns Pl & Utica Ave**, **11 Ave & W 27 St**. "Our data isn't rich enough to have a value between 0 and 100." With 1 snapshot per station, every percentage is 0% or 100%. More data will fix that.
@@ -814,7 +892,7 @@ END
 
 ---
 
-## Query 3: How does bike availability change by hour? (recording 2, 2:11–)
+## Query 3: How does bike availability change by hour?
 
 ```sql
 SELECT EXTRACT(HOUR FROM f.snapshot_ts)   AS hour_utc,
@@ -832,7 +910,7 @@ ORDER BY hour_utc;
 
 ---
 
-**Query 3 result (recording 2, 2:13–2:15):** only three hours have data, because the schedule only runs during class: hours **18, 19 and 20**. Evan read these as 6, 7 and 8 PM. Average availability rose from about **48% to 55%** across them. His guess: fewer people rent after 8 PM, more earlier in the day, and "probably more people rent bikes on weekends than weekdays." A chart in the AI output was only an example of what the SQL *could* drive with real data ("more for if we got the Streamlit app together"); Redshift's editor doesn't draw that.
+**Query 3 result:** only three hours have data, because the schedule only runs during class: hours **18, 19 and 20**. Evan read these as 6, 7 and 8 PM. Average availability rose from about **48% to 55%** across them. His guess: fewer people rent after 8 PM, more earlier in the day, and "probably more people rent bikes on weekends than weekdays." A chart in the AI output was only an example of what the SQL *could* drive with real data ("more for if we got the Streamlit app together"); Redshift's editor doesn't draw that.
 
 **Accuracy note: those hours are UTC, not New York time.** `snapshot_ts` is stored in UTC (the Bronze keys and Spark job set UTC). Hours 18–20 UTC = **2–4 PM EDT**, which matches when the scheduler actually ran during class (Oct 7 ~2:28 PM onward). So the data says nothing about evenings. It's mid-afternoon on two weekdays. Always label time columns with their zone (Evan's alias `hour_utc` does) and convert before interpreting:
 
@@ -842,7 +920,7 @@ EXTRACT(HOUR FROM CONVERT_TIMEZONE('UTC', 'America/New_York', f.snapshot_ts)) AS
 
 ---
 
-## Query 4: Which stations may have operational problems? (recording 2, 2:15–2:18)
+## Query 4: Which stations may have operational problems?
 
 ```sql
 SELECT s.station_name,
@@ -864,7 +942,7 @@ Same conditional-count + percentage pattern as Query 2, applied to `is_operation
 
 ---
 
-## Query 5: Compare stations across days (recording 2, 2:18–)
+## Query 5: Compare stations across days
 
 "We've only got two days' worth of data, so this isn't going to give us much, but it will give us something." Per `calendar_date` (from `dim_date`): `COUNT(DISTINCT station_id)` as stations observed, `COUNT(*)` as total observations, rounded averages of bikes available and utilization, and a count of empty observations.
 
@@ -922,7 +1000,7 @@ CALL gold.refresh_dim_station();
 | Safe percentage | `100.0 * part / NULLIF(total, 0)` | Queries 2 and 4 |
 | Star join | Fact + dimension joins, `GROUP BY` dimension attributes | Every analytical query |
 | Truncate-and-load (idempotent full refresh) | `TRUNCATE` then `INSERT ... SELECT` | Gold loads |
-| Upsert / MERGE (incremental) | `MERGE INTO target USING source ON key WHEN MATCHED ... WHEN NOT MATCHED ...` | Next step: loading only new snapshots |
+| Upsert / MERGE (incremental) | `MERGE INTO target USING source ON key WHEN MATCHED ... WHEN NOT MATCHED ...` | Next step: loading only new snapshots (full example in "How do you upsert into Redshift?" above) |
 | SCD Type 2 | Close the old row (`valid_to`), insert a new version | Tracking station capacity changes |
 | Top-N per group | `ROW_NUMBER()` / `RANK()` with `QUALIFY ... <= N` | "Top 3 stations per borough" |
 | CTE pipeline | `WITH step1 AS (...), step2 AS (...) SELECT ...` | Breaking a long query into readable steps |
@@ -974,7 +1052,7 @@ Evan: "I don't want to unnecessarily stress you out... your homework is going to
 
 Reference ChatGPT sessions Evan posted in the Teams chat:
 1. The main lesson on the pipeline (Glue Silver → Redshift Gold, star schema, analytical queries)
-2. Richard's question about SQL design patterns
+2. A student's question about SQL design patterns
 3. SQL methods such as TRUNCATE (DELETE vs TRUNCATE vs DROP)
 4. Reasons to create dim tables before fact tables in Redshift
 5. Granting permissions in IAM (the student group policy changes)
@@ -982,6 +1060,6 @@ Reference ChatGPT sessions Evan posted in the Teams chat:
 
 ---
 
-**Official homework wording (2:39):** develop your own pipeline "to the full extent that it was in class": ingestion in **Lambda** → **S3**; **EMR or Glue** for Bronze → Silver (you don't need to do both), then Silver → Gold; Gold as a **star schema**; then **basic analytical queries** "to answer natural-language questions about what the data can tell us." "Make it so that on your side it looks like it does on my side." Class ended ~16:57: "Have a great weekend, see you Monday."
+**Official homework wording:** develop your own pipeline "to the full extent that it was in class": ingestion in **Lambda** → **S3**; **EMR or Glue** for Bronze → Silver (you don't need to do both), then Silver → Gold; Gold as a **star schema**; then **basic analytical queries** "to answer natural-language questions about what the data can tell us." "Make it so that on your side it looks like it does on my side." Class ended ~16:57: "Have a great weekend, see you Monday."
 
 ---

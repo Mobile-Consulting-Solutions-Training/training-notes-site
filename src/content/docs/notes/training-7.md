@@ -9,6 +9,8 @@ Teacher: Evan Flint
 
 Syllabus Day 8 (per file numbering) - actual coverage: `spark-submit` CLI arguments and Spark deployment configuration. Note: this continues the pacing drift already visible in `Training 6.md` (which itself covered content closer to the roadmap's Day 8 topic) - this session's content lines up with the roadmap's Day 9/10 territory ("Hive + Spark Intro" / "Spark Advanced") rather than its own nominal Day 8 slot.
 
+---
+
 # Spark Submit
 
 ## Video Resources
@@ -74,11 +76,15 @@ Expanded: these are the arguments that describe *how and where* the job is submi
 
 Expanded: these control the actual compute shape of the job. Driver settings size the coordinating process (which builds the DAG and collects results); executor settings size the worker processes that actually run tasks. `--num-executors` is YARN's way of saying "how many workers," while `--total-executor-cores` is the standalone/Mesos equivalent of the same idea expressed as a total core budget instead of a worker count - worth remembering that these two are largely interchangeable concepts across cluster managers, not two unrelated settings.
 
+---
+
 Q. What is `--driver-memory`?
 
 A. (Teacher's definition) Driver memory is like executor memory, but it's for the driver application.
 
 Expanded: same concept as `--executor-memory`, just applied to the single driver process instead of the (potentially many) executor processes - it's the RAM available to the process that builds the DAG, schedules tasks, and (importantly) collects results back from executors, e.g. via `.collect()`. Since there's only ever one driver per job (unlike executors, which can number in the dozens), sizing this is less about cluster-wide throughput and more about making sure the driver doesn't run out of memory when it has to hold a large collected result set or a very large execution plan in memory.
+
+---
 
 Q. What does `--num-executors` control?
 
@@ -86,11 +92,15 @@ A. (Teacher's definition) The number of executors which will be used in the job,
 
 Expanded: this is the total count of executor *processes* Spark will launch for the job - and per the Worker vs Executor section above, those executors get spread across the cluster's worker nodes, with a given worker commonly hosting several of them rather than just one.
 
+---
+
 Q. What does `--executor-memory` control?
 
 A. (Teacher's definition) The amount of memory (RAM) which is allocated to each executor.
 
 Expanded: this is a *per-executor* setting, not a per-worker or per-job total - each executor process gets this much RAM to hold cached data and run its assigned tasks. Since a worker often hosts multiple executors at once (per the cardinality point above), the actual RAM a single worker machine needs to support is roughly `(executors on that worker) x --executor-memory` - undersizing this per-executor value risks out-of-memory task failures, while oversizing it wastes RAM that could've gone to running more executors in parallel.
+
+---
 
 Q. What does `--executor-cores` control?
 
@@ -125,11 +135,15 @@ A. (Teacher's definition) First, take stock of the basics of the hardware:
 
 Expanded: before picking numbers for these three settings, the starting point is always the physical ceiling of the cluster itself - you can't allocate more cores/RAM across all your executors than the hardware actually has. This is the first step of a sizing methodology (continues in this section as more is covered) that turns raw hardware specs (node count x cores/node x RAM/node) into concrete `--num-executors` / `--executor-cores` / `--executor-memory` values, generally leaving some cores/RAM per node reserved for the OS and (on YARN) the NodeManager/ApplicationMaster daemons rather than allocating 100% of a node's hardware to executors.
 
+---
+
 Q. In a standard situation with identical nodes, how do you calculate `--executor-cores`?
 
 A. (Teacher's definition) In a standard situation, with identical nodes, the way that you calculate these numbers is to start with the number of CPU cores per node, then divide that by 5 - this will give you the number of cores per executor.
 
 Expanded: the "5" here is itself the target `--executor-cores` value (a well-known Spark tuning rule of thumb, not arbitrary) - it caps each executor at around 5 concurrent tasks/threads, which is roughly the point past which HDFS client throughput and JVM garbage-collection behavior start to degrade if a single executor is given too many cores at once. Dividing a node's total cores *by* that fixed 5 doesn't recompute `--executor-cores` itself - it gives the **number of executors that fit on one node** (confirmed by the worked example below, where `36 / 5 = 7 executors`, not "7 cores per executor"). So the full picture is: `--executor-cores` = 5 (fixed starting point), and `executors per node` = `cores per node / 5`.
+
+---
 
 Q. Once you know the number of executors per node, how do you calculate `--executor-memory`?
 
@@ -137,7 +151,9 @@ A. (Teacher's definition) Once you have the number of executors for the node, yo
 
 Expanded: `--executor-memory` = `RAM per node / executors per node`. This is the same "divide the node's total resource by how many executors share the node" logic used for cores, just applied to RAM instead - each executor on a node gets an equal slice of that node's total memory.
 
-**Worked example - an average case (10 nodes, 36 cores/node, 64 GB RAM/node):**
+---
+
+Q. Worked example: how would you size executors for 10 nodes x 36 cores x 64 GB RAM?
 
 A. (Teacher's definition) So the process is this for an average case (10 nodes, 36 cores per node, 64 GB memory per node): 36 / 5 = 7 executors, with a remainder of 1 core for system processes.
 
@@ -157,7 +173,26 @@ Expanded: continuing the same worked example, `64 GB / 7 executors = 9.14 GB`, r
 | `--executor-memory` | 64 GB / 7, rounded down | 9g |
 | RAM reserved for OS/system | 64 - (7 x 9) | ~1 GB |
 
-For the full cluster (10 nodes x 7 executors/node), this would give `--num-executors 70 --executor-cores 5 --executor-memory 9g` as the resulting `spark-submit` settings for this average-case hardware profile.
+For the full cluster (10 nodes x 7 executors/node), the teacher's numbers give `--num-executors 70 --executor-cores 5 --executor-memory 9g`.
+
+Expanded (correction): the teacher's method is the right shape, but it leaves out two things, and with them the numbers above don't actually fit on the nodes.
+1. **Memory overhead.** Each executor container on YARN/Kubernetes asks for `--executor-memory` **plus** `spark.executor.memoryOverhead`, which defaults to `max(384 MB, 10% of executor memory)`. 7 executors x (9 GB + ~0.9 GB) = ~69 GB, which is more than the 64 GB node has.
+2. **The ApplicationMaster.** On YARN, one container is used by the ApplicationMaster (in cluster mode it also hosts the driver), so subtract one executor from the cluster total.
+
+The standard version of the calculation:
+
+| Step | Calculation | Result |
+|---|---|---|
+| Reserve per node for OS/daemons | 1 core + 1 GB | 35 cores, 63 GB usable |
+| `--executor-cores` | rule of thumb | 5 |
+| Executors per node | 35 / 5 | 7 |
+| Memory per executor container | 63 GB / 7 | ~9 GB |
+| Subtract ~10% memory overhead | 9 GB - ~0.9 GB | `--executor-memory` ~8g |
+| `--num-executors` | 10 nodes x 7 - 1 (ApplicationMaster) | 69 |
+
+Result: `--num-executors 69 --executor-cores 5 --executor-memory 8g`.
+
+**Interview line:** "I reserve one core and about 1 GB per node for the OS, use about 5 cores per executor, divide the remaining memory by executors per node, take about 10% off for memory overhead, and subtract one executor for the YARN ApplicationMaster."
 
 ---
 
@@ -223,6 +258,13 @@ spark-submit \
   --conf spark.dynamicAllocation.enabled=true \
   job.py
 ```
+
+| Property | Default | What it controls |
+|---|---|---|
+| `spark.sql.shuffle.partitions` | 200 | Number of partitions produced by every DataFrame/SQL shuffle (joins, `groupBy`). Too low = huge partitions that spill; too high = thousands of tiny tasks. With AQE on, Spark can coalesce small shuffle partitions after the fact |
+| `spark.sql.adaptive.enabled` | `true` since Spark 3.2 | Turns on AQE (runtime re-planning: coalesce partitions, switch join strategy, split skewed join partitions) |
+| `spark.executor.memoryOverhead` | `max(384 MB, 10% of executor memory)` | Extra non-heap memory per executor container (JVM overhead, Python workers, network buffers). Exceeding it gets the container killed by YARN/Kubernetes |
+| `spark.dynamicAllocation.enabled` | `false` (on by default on EMR/Databricks) | Lets Spark add and remove executors based on pending tasks instead of a fixed `--num-executors` |
 
 ---
 
@@ -339,6 +381,8 @@ Expanded: `--deploy-mode` controls **where the driver process runs**, not where 
 
 The key practical consequence: in `client` mode, if your local machine/network connection drops, the driver dies and the job dies with it, since the driver was running locally the whole time. In `cluster` mode, the driver is just another process running inside the cluster (YARN/standalone/Kubernetes), so it's resilient to the submitting machine disconnecting - this is why production pipelines almost always use `--deploy-mode cluster`, while `client` is preferred for interactive/debugging sessions where you want immediate console feedback.
 
+**Interview line:** "Deploy mode only decides where the driver runs: in client mode it runs on the machine I submitted from, which is good for notebooks and debugging; in cluster mode it runs inside the cluster, which is what production jobs use so they survive the submitting machine going away."
+
 ---
 
 ## Worker vs Executor
@@ -349,11 +393,15 @@ A. (Teacher's definition) In Spark, a worker is a computer - it is the physical 
 
 Expanded: this draws a distinction that `Training 0.md`'s Driver/Executor coverage left implicit (it used "Worker/Executor" almost interchangeably) - a **worker** is the physical machine/node itself, while an **executor** (below) is the actual process that Spark launches *on* that worker to run tasks. This mirrors the same coordinator/many-hands shape noted back in `Training 3.md`'s Jenkins Controller/Agent comparison - there, "Agent" conflates machine-and-process the same way "worker" and "executor" can get conflated here, so it's worth keeping the two ideas separate.
 
+---
+
 Q. What is an executor, in Spark?
 
 A. (Teacher's definition) An executor is a process, part of Spark's software, which runs on the nodes in the cluster.
 
 Expanded: this confirms the distinction directly - an executor isn't the machine itself, it's a *process* (specifically, a JVM process that's part of Spark's own software) that Spark starts up on a worker node to actually execute tasks. A single worker node can potentially host one or more executor processes; the worker is the hardware/host, the executor is the running Spark process doing the work on it.
+
+---
 
 Q. Is it usually one executor per worker, or can a worker run more than one?
 
@@ -361,16 +409,27 @@ A. (Teacher's definition) In most Spark jobs, multiple executors will be running
 
 Expanded: this settles the cardinality question directly - it's not a 1:1 mapping. A single worker (physical/virtual machine) typically has multiple CPU cores and a large chunk of RAM, so rather than running just one large executor process, Spark commonly divides a worker's resources across several smaller executor processes running side-by-side on that same machine. This is exactly why `--executor-memory` and `--executor-cores` (from the Driver/Executor Resources table above) are sized *per executor*, not per worker - the total resources a worker contributes to a job is effectively `(executors on that worker) x (--executor-memory / --executor-cores)`, and getting that per-executor sizing right (not too big, not too small) is a core part of Spark cluster tuning.
 
+---
+
 Q. What was the older, "classic" terminology for this same coordinator/worker architecture?
 
 A. (Teacher's definition) The standard terminology for the nodes in the cluster used to be that we have a master node and multiple worker nodes. That was the standard in Spark - the classic name for the architecture in which we have one node where the developer logs in and does the majority of the work, then that node controls all the other nodes in the cluster, was called the **master-slave architecture**.
 
-Expanded: this is the historical name for the exact same shape already covered in `Training 0.md`'s "Master/Worker (Driver/Executor)" table entry - "master" maps to today's driver (the node the developer effectively works through, coordinating everything), and "slave" maps to today's worker nodes. The industry has broadly moved away from "master-slave" terminology (replaced with pairings like driver/executor, primary/replica, or leader/follower depending on the tool), but it's worth recognizing "master-slave" if it comes up in older docs, legacy codebases, or interview questions, since it describes the identical coordinator-and-many-workers architecture just under an older name.
+Expanded: "master-slave" is the general historical name for a one-coordinator, many-workers cluster. The industry has broadly moved away from the term (replaced with pairings like primary/replica or leader/follower depending on the tool), but it's worth recognizing in older docs, legacy codebases, or interview questions.
 
-| Era/Term | Coordinator | Workers |
-|---|---|---|
-| Classic ("master-slave") | Master node | Worker nodes (slaves) |
-| Modern Spark terminology | Driver | Worker nodes, each running executor processes |
+Expanded (correction): in Spark specifically, the **Master** and the **driver** are two different things, so "master" does not map to "driver".
+- In Spark Standalone mode, the **Master** is the **cluster manager**: a long-running daemon (`spark://host:7077`) that tracks the Workers and allocates cores/memory to applications. On YARN its role is played by the ResourceManager.
+- The **driver** is a separate process, one per application, that runs your `main()`/SparkSession, builds the plan, and schedules tasks onto executors. It runs on the client machine (client mode) or on a worker (cluster mode).
+- The node "where the developer logs in" is usually called an **edge node** or gateway node. It is where `spark-submit` is run, not the Master.
+
+This matches the Anatomy of a Spark Application section below, where the Spark Master is listed as the cluster manager.
+
+| Role | Spark Standalone name | YARN equivalent | What it does |
+|---|---|---|---|
+| Cluster manager ("master") | Master | ResourceManager | Allocates resources across all applications |
+| Per-node agent ("slave") | Worker | NodeManager | Launches executor processes on its machine |
+| Per-application coordinator | Driver | Driver (inside the ApplicationMaster in cluster mode) | Plans the job and schedules tasks |
+| Per-application workers | Executors | Executors (YARN containers) | Run tasks and hold cached data |
 
 | Term | What it actually is |
 |---|---|
@@ -399,11 +458,23 @@ Expanded: this is the full end-to-end lifecycle of a Spark job, tying together n
 |---|---|---|
 | 1. Driver spins up | The driver process starts, reading the job's configuration (all the `spark-submit` flags/`--conf` settings above) and the application's own code/logic | Core Arguments, Deploy Mode sections above |
 | 2. Optimizer builds logical + physical plans | Spark's Catalyst optimizer turns your DataFrame/SQL logic into a **logical plan** (what to do, in the abstract), then an optimized **physical plan** (the concrete execution strategy - e.g. which join algorithm, how to partition) | Builds on `Training 0.md`'s "Spark builds a DAG" coverage - the logical/physical plan pair is the more precise, two-stage version of that DAG-building step |
-| 3. Cluster manager distributes data to executors | The cluster manager (YARN/standalone/Kubernetes) allocates the executors and hands each one its assigned partition(s) of data to work on | Cluster-Manager-Specific Arguments section above |
-| 4. Executors process their share | Each executor runs its assigned tasks on its partition(s) in parallel with the others | Worker vs Executor section above |
-| 5. Results return to the driver and get written out | Executors send their results back to the driver (routed through the cluster manager, not directly), the driver re-assembles the full output, and writes it to the final output location | Driver's role in the Driver/Executor split above |
+| 3. Cluster manager launches executors; driver sends tasks | The cluster manager (YARN/standalone/Kubernetes) launches the executor processes. The driver then sends tasks **directly** to the executors. Each task reads its own partition straight from storage (ideally on the same node - data locality) | Cluster-Manager-Specific Arguments section above |
+| 4. Executors process their share | Each executor runs its assigned tasks on its partition(s) in parallel with the others, exchanging data with other executors during shuffles | Worker vs Executor section above |
+| 5. Output is written / results returned | For a write, each executor writes its own partition directly to the output location (S3/HDFS/table). Only actions like `collect()`, `take()` or `count()` send results back to the driver, and executors send them directly, not through the cluster manager | Driver's role in the Driver/Executor split above |
 
-**Worth noting:** step 5's detail that results are returned *through the cluster manager* rather than executors talking to the driver directly reinforces why the cluster manager isn't just a one-time resource allocator at job start - it stays involved as the coordination layer for the whole job's lifetime, not only at launch.
+Expanded (correction): steps 3 and 5 of the teacher's answer need two fixes before you give it in an interview.
+1. **The cluster manager is not a data path.** It allocates resources and launches executors (and adds/removes them under dynamic allocation). After that, executors register with the driver and talk to it **directly**: the driver sends tasks, and executors send back task status, heartbeats, and results.
+2. **Nothing is re-assembled on the driver for a write.** Each executor writes its own output files in parallel (that is why a Spark write produces many `part-*` files). Data only comes back to the driver for actions like `collect()`/`take()`, which is why `collect()` on a big dataset can crash the driver.
+
+| Component | Talks to | About what |
+|---|---|---|
+| Driver -> cluster manager | At startup (and for dynamic allocation) | "I need N executors with X cores / Y GB" |
+| Cluster manager -> worker nodes | At startup | Launch executor processes |
+| Driver <-> executors | Whole job, directly | Tasks out; status, heartbeats, `collect()` results back |
+| Executor <-> executor | During shuffles | Shuffle blocks |
+| Executor -> storage | Whole job | Read input partitions, write output files |
+
+**Interview line (corrected 5 steps):** "1) The driver starts and creates the SparkSession. 2) Catalyst turns my code into a logical plan, optimizes it, and picks a physical plan, which becomes a DAG of stages split at shuffles. 3) The driver asks the cluster manager for executors, and the cluster manager launches them. 4) The driver sends tasks, one per partition, directly to the executors, which read their partitions from storage, run in parallel, and shuffle between stages. 5) Executors write output directly to storage; only actions like `collect()` bring rows back to the driver."
 
 ### The Optimizer (Step 2, in detail)
 
@@ -416,14 +487,22 @@ Expanded: the optimizer is the component responsible for taking your DataFrame/S
 | Term | What it is |
 |---|---|
 | Optimizer (general) | The component that decides the most efficient execution strategy for a job, before it runs |
-| Catalyst optimizer | Spark SQL's modern, preferred optimizer - produces the logical and physical plans referenced in step 2 above |
-| "Default optimizer" | Older/alternative optimizer path, generally superseded by Catalyst in modern Spark |
+| Catalyst optimizer | Spark SQL's optimizer, and the default (and only) optimizer for DataFrames, Datasets and SQL - produces the logical and physical plans referenced in step 2 above |
+| CBO (cost-based optimization) | Part of Catalyst; uses table/column statistics (`ANALYZE TABLE ... COMPUTE STATISTICS`) to pick join order and join strategy |
+| AQE (Adaptive Query Execution) | Re-plans at runtime using real shuffle statistics (see below) |
+| Tungsten | The execution engine underneath: whole-stage code generation and off-heap/binary memory management |
+
+Expanded (correction): there is no separate "default optimizer" to choose between. Catalyst **is** the default optimizer for DataFrame/Dataset/SQL code, and plain RDD code has no optimizer at all (Spark runs RDD operations exactly as written). This is one reason DataFrames are usually faster than RDDs. The pieces worth naming in an interview are Catalyst, CBO, AQE, and Tungsten, as in the table above.
+
+---
 
 Q. What is a "predicate," in this context?
 
 A. (Teacher's definition) Predicate - this is a reference to a field of formal logic which we don't need to super go into - but you just need to know that anything that removes data from the dataset can be considered a predicate - that includes the WHERE clause in SQL and the filter operation in Spark.
 
 Expanded: rather than a strict formal-logic definition, the practical takeaway is simpler - a predicate is any condition that decides "keep this row or not," which in Spark/SQL terms means a `WHERE` clause or a `.filter()`/`.where()` call. This is the term that "predicate pushdown" (next) is named after.
+
+---
 
 Q. What is predicate pushdown, one of Catalyst's optimizations mentioned above?
 
@@ -451,15 +530,21 @@ Join / Group / Sort 50 GB
 
 ...rather than carrying the entire 1 TB through expensive operations (joins, shuffles, sorts) before finally filtering it down at the end.
 
+---
+
 Q. What is the logical plan, specifically?
 
 A. (Teacher's definition) The logical plan is a high-level, formal plan that describes the operations that Spark will take in order to get the input data to be processed into the output data.
+
+---
 
 Q. What is the physical plan, specifically?
 
 A. (Teacher's definition) The physical plan is the formal description of the low-level execution plan style steps that the computer will take to implement the logical plan.
 
 Expanded: the two plans sit at different altitudes describing the *same* job. The **logical plan** answers "what needs to happen" (e.g. "filter these rows, then join these two datasets, then aggregate") without committing to *how* - it's an abstract description of the transformations, independent of the cluster's actual hardware. The **physical plan** answers "how will this actually run" - it takes that logical plan and turns it into concrete, low-level execution steps (which join algorithm to use, how data gets partitioned/shuffled, which operations can be combined into a single stage), tailored to the real cluster it's about to run on. This is the same logical -> physical progression already summarized in step 2 of the execution-flow table above, just broken out here in full detail.
+
+---
 
 Q. Does the optimizer only ever produce one logical plan and one physical plan?
 
@@ -473,17 +558,23 @@ Expanded: this is the cost-based side of Catalyst's optimization process - rathe
 | Physical plan | *How* it will actually be executed | Low-level, concrete - tailored to the real cluster/hardware |
 | Selection | Optimizer generates multiple candidates of each, picks the most efficient based on known data/cluster info | Cost-based optimization |
 
+---
+
 Q. What is a DAG, in the Spark context?
 
 A. (Teacher's definition) Directed Acyclic Graph (DAG).
 
-Expanded: `Training 0.md` already briefly touched on this ("Spark builds this into a DAG (Directed Acyclic Graph) of steps"). A DAG is a graph of nodes connected by directed edges (arrows) with no cycles - you can never follow the arrows back to a node you already visited. In Spark, the DAG represents the chain of transformations (per the Narrow vs Wide Dependencies section below) as a graph of dependencies between RDDs/DataFrames - it's the structure the logical plan above is built as, before Catalyst turns it into a physical plan.
+Expanded: in one sentence - the DAG is the graph of all the transformations in your job, with arrows showing which step feeds which and no loops; Spark's scheduler cuts it into stages at every shuffle and runs the stages in order. `Training 0.md` already briefly touched on this ("Spark builds this into a DAG (Directed Acyclic Graph) of steps"). A DAG is a graph of nodes connected by directed edges (arrows) with no cycles - you can never follow the arrows back to a node you already visited. In Spark, the DAG represents the chain of transformations (per the Narrow vs Wide Dependencies section below) as a graph of dependencies between RDDs/DataFrames - it's the structure the logical plan above is built as, before Catalyst turns it into a physical plan.
+
+---
 
 Q. Is the DAG concept specific to Spark?
 
 A. (Teacher's definition) The DAG is a Spark concept, but it comes from mathematics, specifically graph theory, and is used in other applications besides Spark, notably Apache Airflow, and can be applied in many cases.
 
 Expanded: this connects forward to `Training 26.md`'s upcoming Apache Airflow coverage - Airflow uses the exact same DAG concept to represent a *pipeline* of tasks/dependencies (rather than Spark's chain of data transformations), which is why Airflow's own building block is literally called a "DAG" too. Recognizing DAG as a general graph-theory concept, not a Spark-specific invention, makes it easier to transfer this mental model directly onto Airflow (and any other tool built around directed, cycle-free dependency graphs) later in the course.
+
+---
 
 Q. Why is it called a "directed" graph specifically?
 
@@ -498,6 +589,8 @@ Expanded: "circles" = **nodes** (the individual steps/RDDs/DataFrames in the cha
 | Directed | Every edge has a one-way direction - not simply "connected," but "flows from A to B" |
 | Acyclic | No path of edges ever loops back to a node already visited |
 
+---
+
 Q. Why is it called an "acyclic" graph specifically, in the Spark context?
 
 A. (Teacher's definition) It's an acyclic graph because once you have moved from one stage to the next, it is against the rules to go back to the previous stage.
@@ -510,6 +603,8 @@ Q. What was the big feature introduced in Spark 3.0 for improving query efficien
 
 A. (Teacher's definition) Adaptive Query Execution. AQE was the big feature in Spark 3.0. AQE is a system that will continuously work to improve the efficiency of the Spark job during execution.
 
+---
+
 Q. How does AQE actually work?
 
 A. (Teacher's definition) The basic way that it works is that instead of just selecting one logical plan and one physical plan, AQE will develop new plans after the execution of each stage - so as soon as Spark's execution goes from one stage to the next, AQE will collect data about the actual observed performance of the executors. Then it will create new logical and physical plans in order to further improve efficiency. It will do this as many times as necessary in order to improve efficiency. It can also automatically change partition sizes in order to avoid data skew.
@@ -521,14 +616,14 @@ This directly explains the `spark.sql.adaptive.enabled=true` setting already sho
 **AQE's three concrete capabilities (per today's class summary):**
 - Dynamically **changes join strategies** mid-query (e.g. switching to a broadcast join - see Broadcast Variables and Broadcast Joins, below - if a table turns out smaller than originally estimated)
 - **Coalesces unnecessarily small shuffle partitions** (avoiding the overhead of scheduling/running many tiny tasks)
-- **Detects and mitigates skewed partitions** (the data skew point already covered above)
+- **Detects and mitigates skewed partitions** in sort-merge joins, by splitting an oversized partition into smaller tasks (see Data Skew, below - it does not fix skewed `groupBy` aggregations)
 
 **Important scope clarification:** AQE does **not** maintain a learning history across separate job *runs* - it only responds to runtime information gathered *during the current execution* (per-stage statistics, as described above), not to what happened the last time this same job ran. Persisted table/column statistics can separately feed into Catalyst's cost-based optimizer (CBO) when constructing the *initial* plan, before AQE ever kicks in - but that's a distinct mechanism from AQE's own mid-job adaptation.
 
 | Without AQE | With AQE |
 |---|---|
 | One logical + physical plan, chosen once, before execution, based on estimates | Plan is re-evaluated after every stage, based on actual observed executor performance |
-| Skewed partitions stay as originally planned | Partition sizes can be automatically adjusted mid-job to reduce skew |
+| Skewed partitions stay as originally planned | Skewed sort-merge-join partitions can be split mid-job; small shuffle partitions are coalesced |
 | Spark's original optimization model | Spark 3.0's major optimization feature (`spark.sql.adaptive.enabled=true`) |
 
 ---
@@ -567,6 +662,8 @@ App
 
 Tasks are ultimately what run *on* executors (per the Worker vs Executor section above) - the same executor can run tasks from different stages/jobs over its lifetime, it isn't dedicated to just one.
 
+---
+
 Q. What exactly is a task?
 
 A. (Teacher's definition) A task is an individual data processing operation that Spark performs - all actual commands that you pass to spark are tasks.
@@ -581,13 +678,19 @@ Q. What are the three categories every Spark task falls into?
 
 A. (Teacher's definition) All tasks fall into one of three categories: narrow transformations, wide transformations, and actions.
 
+---
+
 Q. What is a narrow transformation?
 
 A. (Teacher's definition) Narrow transformations are data processing operations which do NOT shuffle the data.
 
+---
+
 Q. What is a wide transformation?
 
 A. (Teacher's definition) Wide transformations are operations which shuffle the data.
+
+---
 
 Q. What is an action?
 
@@ -616,6 +719,8 @@ Job
 **Why this matters practically:** shuffles are the most expensive operation in Spark (data movement across the network, as already flagged in `Training 0.md`'s "Key Concepts" table) - recognizing which of your transformations are wide (and therefore trigger a shuffle/new stage) versus narrow is central to writing efficient Spark code and to reading a Spark execution plan/DAG when debugging performance.
 
 ### The Precise Distinction (Partition Dependencies)
+
+Q. What is the precise distinction between a narrow transformation, a wide transformation, and an action?
 
 A. (Teacher's definition) For teaching Spark, the key distinction is:
 - **Narrow transformation** → each output partition depends on a small number - typically one - of input partitions; no shuffle is inherently required.
@@ -733,14 +838,23 @@ Q. What's the difference between `coalesce` and `repartition`?
 
 A. (Teacher's definition) Coalesce is a method in Spark which can reduce the number of partitions by taking all of the partitions that have gone to a particular node, then combining them together into a single partition. So coalesce can only turn smaller partitions into larger partitions, and it does NOT guarantee that the partition sizes will be equal. Repartition is similar - in fact, at the low level, repartition first performs a coalesce operation, THEN it shuffles the data and divides it into the specified number of partitions.
 
-Expanded: this adds two important details beyond the "narrow vs wide" summary above. First, `coalesce()`'s mechanism specifically: it works *node-locally* - combining partitions that already live on the same node into fewer, larger partitions - which is exactly why it can avoid a full network shuffle, but also why it can only ever *decrease* partition count (you can't merge your way to more partitions than you started with), and why the resulting partitions can end up uneven in size (it's just grouping what's already there, not evenly redistributing). Second, `repartition()` isn't a totally separate operation from `coalesce()` - under the hood, it actually runs a coalesce step first, and *then* performs a full shuffle to redivide the data into the requested number of partitions, which is what lets it both increase *or* decrease partition count and guarantee more even sizing (unlike plain `coalesce()`).
+Expanded: `coalesce()`'s mechanism specifically: it works *node-locally* - combining partitions that already live on the same node into fewer, larger partitions - which is exactly why it can avoid a full network shuffle, but also why it can only ever *decrease* partition count (you can't merge your way to more partitions than you started with), and why the resulting partitions can end up uneven in size (it's just grouping what's already there, not evenly redistributing).
+
+Expanded (correction): `repartition()` does not run a coalesce step and *then* a shuffle as two separate steps. In the RDD API, `repartition(n)` is literally defined as `coalesce(n, shuffle = true)` - the same method with the shuffle switched on, so it is **one** full shuffle. Two more details:
+- Only `repartition(n)` with no column spreads rows round-robin into roughly equal partitions. `repartition(n, "col")` hash-partitions by the column, so a hot key still produces one oversized partition (this is why salting exists - see Training 8).
+- `coalesce(1)` (or any big reduction) is narrow, so Spark can fold it into the **previous** stage. That stage then runs with only 1 task, which can make the whole upstream computation single-threaded. If you need one output file from heavy work, `repartition(1)` keeps the upstream stage parallel and only the final write runs on one task.
 
 | | `coalesce()` | `repartition()` |
 |---|---|---|
-| Can increase partition count? | No - can only reduce | Yes - can increase or decrease |
-| Mechanism | Combines partitions already on the same node into fewer, larger ones | Internally coalesces first, then shuffles and redivides into the requested count |
-| Guarantees equal partition sizes? | No | Yes (post-shuffle redistribution) |
-| Shuffle? | Avoids a full shuffle (mostly narrow) | Always shuffles (wide) |
+| Can increase partition count? | No - can only reduce (DataFrame API) | Yes - can increase or decrease |
+| Mechanism | Merges existing partitions (preferring ones on the same node) into fewer, larger ones | One full shuffle; it is `coalesce(n, shuffle = true)` |
+| Equal partition sizes? | No | Roughly, for `repartition(n)` (round-robin); not guaranteed for `repartition(n, col)` (hash - hot keys stay together) |
+| Shuffle? | Avoids a full shuffle (narrow) | Always shuffles (wide) |
+| Gotcha | `coalesce(1)` can collapse the upstream stage to 1 task | Costs a full shuffle |
+
+**Interview line:** "`coalesce` reduces partitions by merging existing ones without a shuffle, so it's cheap but can leave uneven partitions; `repartition` does a full shuffle, so it can increase or decrease the count and gives even partitions when you don't partition by a column. I use `coalesce` to cut down partitions before a write, and `repartition` when I need more parallelism or need to rebalance."
+
+---
 
 Q. Given that `repartition()` costs more compute than `coalesce()`, when is it worth choosing anyway?
 
@@ -751,7 +865,7 @@ Expanded: this is the practical decision rule tying `coalesce()` vs `repartition
 | Choice | Upfront cost | Downstream risk |
 |---|---|---|
 | `coalesce()` | Cheaper (avoids full shuffle) | Uneven partitions can cause data skew later in the job |
-| `repartition()` | More expensive (always shuffles) | Even partitions - skew risk from partitioning itself is avoided |
+| `repartition()` | More expensive (always shuffles) | Even partitions with `repartition(n)`; `repartition(n, col)` can still be skewed by hot keys |
 
 ### Joins: Why "Join = Wide" Is an Oversimplification
 
@@ -783,6 +897,36 @@ orders.join(broadcast(customers), "customer_id")
 can produce a **BroadcastHashJoin** - the small table is copied to the executors rather than both datasets being shuffled by key, avoiding the shuffle entirely.
 
 Therefore, for DataFrames, it's more accurate to say: **a join can cause a shuffle, depending on the join strategy Spark chooses** (Catalyst's cost-based decision, per the Optimizer section above). Use `df.explain()` to see what Spark actually decided.
+
+---
+
+Q. What join strategies can Spark choose, and how do you force one?
+
+A. Spark picks one of five physical join strategies based on table size, join type, and hints.
+
+Expanded:
+
+| Strategy | Shuffle? | When Spark picks it | Notes |
+|---|---|---|---|
+| Broadcast Hash Join | No (small side is broadcast) | Equi-join and one side is under `spark.sql.autoBroadcastJoinThreshold` (10 MB default), or a broadcast hint | Fastest; the small side must fit in driver and executor memory |
+| Shuffle Hash Join | Yes, both sides | Equi-join, one side much smaller but too big to broadcast, and sort-merge is not preferred (or a `SHUFFLE_HASH` hint) | Builds a hash table per partition; no sort |
+| Sort-Merge Join | Yes, both sides, plus a sort | Default for large-to-large equi-joins | Scales to any size because it can spill; AQE's skew-join handling applies here |
+| Broadcast Nested Loop Join | No (one side broadcast) | Non-equi joins (`<`, `BETWEEN`, `LIKE`) with a small side | Compares every row pair; slow |
+| Cartesian Product | Yes | Non-equi join or `crossJoin` with no small side | Rows = left x right; avoid |
+
+Join hints (SQL and DataFrame):
+
+```sql
+SELECT /*+ BROADCAST(c) */ * FROM orders o JOIN customers c ON o.customer_id = c.customer_id;
+-- other hints: MERGE (sort-merge), SHUFFLE_HASH, SHUFFLE_REPLICATE_NL
+```
+
+```python
+orders.join(customers.hint("broadcast"), "customer_id")   # same as broadcast(customers)
+orders.join(customers, "customer_id").explain()           # look for BroadcastHashJoin / SortMergeJoin
+```
+
+In `explain()` output, an `Exchange` node means a shuffle, and the join node name (`BroadcastHashJoin`, `SortMergeJoin`, `ShuffledHashJoin`) tells you which strategy was chosen. Broadcast joins and AQE come back in the Databricks material (Training 29); this section is the reference for them.
 
 ### Distinct / Set Operations
 
@@ -951,28 +1095,82 @@ show, collect, count, take, write             → ACTION
 
 ---
 
+Q. What's the difference between `groupByKey()` and `reduceByKey()`?
+
+A. Both are wide RDD transformations that group by key, but `reduceByKey()` combines values on the map side before the shuffle and `groupByKey()` does not.
+
+Expanded: with `reduceByKey(_ + _)`, each executor first adds up the values for each key inside its own partitions (a **map-side combine**, like a MapReduce combiner), so only one partial result per key per partition crosses the network. With `groupByKey()`, every single value is shuffled, and all values for a key are collected into one in-memory list on one executor - more network traffic, and a hot key can run that executor out of memory. Use `reduceByKey`/`aggregateByKey` for aggregations; use `groupByKey` only when you really need every value. DataFrame `groupBy().agg()` already does partial aggregation automatically.
+
+| | `groupByKey()` | `reduceByKey()` |
+|---|---|---|
+| Map-side combine | No | Yes |
+| Data shuffled | Every value | One partial result per key per partition |
+| Memory risk | All values for a key held at once | Low |
+| Use for | Needing the full list of values | Sums, counts, max, any associative operation |
+
+**Interview line:** "`reduceByKey` pre-aggregates on each partition before the shuffle, so it moves far less data; `groupByKey` shuffles every value and can OOM on a hot key, so I avoid it for aggregations."
+
+---
+
+Q. RDD vs DataFrame vs Dataset - what's the difference?
+
+A. They are Spark's three APIs over the same engine; DataFrames and Datasets go through Catalyst, RDDs don't.
+
+Expanded:
+
+| | RDD | DataFrame | Dataset |
+|---|---|---|---|
+| What it is | Distributed collection of objects | Distributed table with named columns (`Dataset[Row]` in Scala) | Distributed collection of typed objects (`Dataset[Sale]`) |
+| Optimized by Catalyst/Tungsten | No | Yes | Yes (lambdas are opaque to Catalyst) |
+| Type safety | Compile-time (Scala/Java) | Runtime only (column names checked when the plan is analyzed) | Compile-time |
+| Languages | Scala, Java, Python | Scala, Java, Python, R, SQL | Scala, Java only |
+| Use when | Low-level control, unstructured data, legacy code | Default choice, especially in PySpark | Scala jobs that want typed domain objects (see Training 10) |
+
+**Interview line:** "I default to DataFrames because Catalyst and Tungsten optimize them; Datasets add compile-time types in Scala; RDDs are the low-level API with no optimizer, so I only use them when I need that control."
+
+---
+
 ## Lazy Evaluation
 
 Q. Are all Spark operations lazily evaluated?
 
 A. (Teacher's definition) All Spark operations are lazily evaluated.
 
+Expanded (correction): only **transformations** are lazy. **Actions** (`count()`, `collect()`, `show()`, `write...`) are eager - calling one is exactly what makes Spark run the plan.
+
+---
+
 Q. What does lazy evaluation actually mean?
 
 A. (Teacher's definition) Lazy evaluation is the principle that operations are not performed until the data is shuffled, and therefore taken from one stage to the next.
+
+Expanded (correction): lazy evaluation means transformations (narrow **or** wide) are not executed until an **action** is called. A shuffle does not trigger execution. `df.groupBy("dept").count()` as a DataFrame transformation, or `rdd.reduceByKey(...)`, runs nothing on its own; it only adds a stage boundary to the plan. When an action is finally called, Spark hands the whole chain to the optimizer, builds the DAG, splits it into stages at the shuffles, and runs them. Benefits: Catalyst can optimize the full chain at once (predicate pushdown, column pruning, combining narrow steps into one stage), and nothing is computed that no action needs.
+
+| Event | Triggers execution? |
+|---|---|
+| Narrow transformation (`filter`, `select`, `map`) | No |
+| Wide transformation (`groupBy`, `join`, `repartition`) | No - marks a stage boundary in the plan |
+| Action (`count`, `collect`, `show`, `write`) | Yes - submits a job |
+| `cache()` / `persist()` | No - the data is cached the first time an action computes it |
+
+Small exception worth knowing: a few calls run a job at definition time because Spark needs data to build the plan, e.g. `spark.read` with `inferSchema=True`, or `sortBy` on an RDD sampling the data for range boundaries.
+
+**Interview line:** "Transformations are lazy - Spark just records them in a plan. Nothing runs until an action like `count`, `collect` or a write. Then Catalyst optimizes the whole chain, Spark splits it into stages at each shuffle, and runs the tasks."
+
+---
 
 Q. What is a stage, defined in terms of lazy evaluation and transformations?
 
 A. (Teacher's definition) Stages are groups of tasks which are lazily evaluated. A stage will consist of zero or more narrow transformations, and at least one wide transformation or action.
 
-Expanded: this is a more precise, mechanical restatement of the lazy-evaluation idea already touched on briefly in `Training 0.md` ("Spark builds this into a DAG... and only actually runs it when an action... is triggered"). Put together with the Narrow vs Wide Dependencies section above, this gives a formal recipe for what a stage actually *is*: a stage accumulates zero or more narrow transformations (`map`, `filter`, `flatMap` - none of which need to move data, so nothing has to execute yet) and always ends with either a wide transformation (a shuffle boundary, forcing the next stage to begin) or an action (which triggers real execution of the whole accumulated chain). Nothing actually runs - no tasks execute on any executor - until one of those two triggering events happens; narrow transformations are only ever building up the logical/physical plan (from the Optimizer section above), never executing on their own.
+Expanded: this is a more mechanical version of the lazy-evaluation idea already touched on briefly in `Training 0.md` ("Spark builds this into a DAG... and only actually runs it when an action... is triggered"). Put together with the Narrow vs Wide Dependencies section above, this gives a recipe for what a stage *is*: a run of narrow transformations (`map`, `filter`, `flatMap` - which can be pipelined together on one partition without moving data) that ends at a shuffle boundary (a wide transformation, where the next stage begins) or at the end of the job (the action). Stages describe **how** the work is divided up; **when** it runs is decided only by the action. Nothing executes on any executor until an action is called, and then all the stages of that job run in order.
 
 | Stage composition rule | Meaning |
 |---|---|
-| Zero or more narrow transformations | Can chain freely - `map`, `filter`, `flatMap`, etc. - without triggering execution or a new stage |
-| ...followed by exactly one wide transformation or action | Where the stage actually ends - a wide transformation starts a *new* stage (shuffle boundary), an action triggers execution of the whole job so far |
+| Zero or more narrow transformations | Pipelined together inside one stage - no data movement between them |
+| ...ending at a wide transformation or the action | A wide transformation closes the stage and starts a new one (shuffle boundary); the action ends the last stage. Only the action triggers execution |
 
-Worked through the RDD lineage example above: `flatMap() -> map()` are the "zero or more narrow transformations" making up Stage 0, and `reduceByKey()` is the wide transformation that both closes Stage 0 and opens Stage 1 - matching this rule exactly.
+Worked through the RDD lineage example above: `flatMap() -> map()` are the "zero or more narrow transformations" making up Stage 0, and `reduceByKey()` is the wide transformation that both closes Stage 0 and opens Stage 1 - matching this rule exactly. None of it runs until the final action.
 
 ---
 
@@ -982,13 +1180,17 @@ Q. How important is data skew as an interview topic?
 
 A. (Teacher's definition) Data Skew - one of the most commonly talked about problems that can happen in a Spark program in interviews. It can also be referred to as Skewness.
 
+---
+
 Q. What is data skew, from the Spark execution perspective?
 
 A. (Teacher's definition) Data skew (from the Spark execution perspective) is a situation where one of the executors needs to do more work than the other executors do - therefore, it's going to take a longer time than the other executors - therefore, the job as a whole is going to be delayed because of the one trailing executor.
 
 Expanded: this is the practical cost of an uneven **shuffle** (per the Narrow vs Wide Dependencies section above) - when a wide transformation like `groupBy()`/`reduceByKey()`/a sort-merge `join()` redistributes data by key, some keys can be far more common than others (e.g. one `department` or `customer_id` has 10x the rows of the rest). Since each partition/task is tied to a set of keys, that means one executor ends up with a disproportionately large partition to process, while the other executors finish their (smaller, evenly-sized) partitions quickly and then sit idle. Because a Spark **job** only completes when *all* its tasks finish (per the Jobs, Stages, and Tasks section above), the entire job's total runtime is bottlenecked by that one slow, overloaded executor - adding more executors or more cluster resources doesn't fix this, since the problem isn't total capacity, it's an uneven *distribution* of the work.
 
-This is exactly the problem **AQE** (covered earlier in this file) directly targets - recall AQE "can also automatically change partition sizes in order to avoid data skew," re-planning partition boundaries mid-job based on actually-observed executor performance rather than the pre-execution estimate that caused the imbalance in the first place.
+This is the problem **AQE** (covered earlier in this file) targets - recall AQE "can also automatically change partition sizes in order to avoid data skew," re-planning partition boundaries mid-job based on actual shuffle statistics rather than the pre-execution estimate. Scope: AQE's skew handling (`spark.sql.adaptive.skewJoin.enabled`) splits oversized partitions in **sort-merge joins**; it does not fix a skewed `groupBy` aggregation.
+
+---
 
 Q. What's the root cause of data skew, put simply?
 
@@ -1004,41 +1206,95 @@ Expanded: this is the root-cause framing behind the "one slow executor" symptom 
 | Symptom | One (or a few) executors take much longer than the rest; the others sit idle after finishing early |
 | Effect | The whole job's total runtime is bottlenecked by the single slowest/most-overloaded executor |
 | Why more resources don't fix it | The problem is distribution of work, not total cluster capacity |
-| Spark's built-in mitigation | AQE (Adaptive Query Execution) can automatically resize/split skewed partitions mid-job |
+| Spark's built-in mitigation | AQE (Adaptive Query Execution) can automatically split skewed partitions in sort-merge joins mid-job |
+| How to spot it | Spark UI, Stages tab: one task's duration / shuffle-read size is far above the median (e.g. max 20 min vs median 30 s); that task often shows spill |
 
-### Salting (Legacy Skew Mitigation)
+---
+
+Q. How do you diagnose a slow or skewed job with `explain()` and the Spark UI?
+
+A. Use `df.explain()` to read the plan before running, and the Spark UI to see what actually happened.
+
+Expanded:
+
+| Tool / tab | What to look at |
+|---|---|
+| `df.explain()` / `explain("formatted")` | `Exchange` nodes = shuffles; join type (`BroadcastHashJoin` vs `SortMergeJoin`); `PushedFilters` on the scan (predicate pushdown working); `AdaptiveSparkPlan` (AQE on) |
+| Jobs tab | One job per action; which job is slow |
+| Stages tab | Per-stage task metrics: compare **max vs median** task duration and shuffle read size (skew); "Spill (Memory/Disk)" columns (partitions too big for memory) |
+| SQL / DataFrame tab | The executed physical plan with row counts per operator; the final plan after AQE changes |
+| Storage tab | What is cached, at which storage level, and what fraction fits in memory |
+| Executors tab | GC time, failed tasks, memory used per executor |
+
+**Interview line ("Why is my Spark job slow?"):** "I open the Spark UI and find the slowest stage, then check for: skew (max task far above median), spill (partitions too big - raise shuffle partitions or memory), too many tiny tasks or small files (coalesce, compact), a sort-merge join that should be a broadcast, Python UDFs blocking Catalyst, and missing partition pruning or predicate pushdown on the read. Then I fix the biggest one and re-measure."
+
+---
+
+### Salting (Manual Skew Mitigation)
 
 Q. What is salting, and is it still commonly used?
 
 A. (Teacher's definition) Salting is a way to partition data which is somewhat outdated these days. AQE has pretty much completely taken the place of salting.
 
+Expanded (correction): this is overstated. AQE handles most **join** skew automatically, by splitting oversized partitions in sort-merge joins. It does **not** fix a skewed `groupBy` aggregation, it can't split a single hot key in every case, and it only works on Spark 3.x with AQE enabled. Salting is still the standard manual fallback, and it is still a very common interview question.
+
+---
+
 Q. How does salting actually work?
 
 A. (Teacher's definition) What salting is is that what we do is add a new column to our existing data, which contains multiple discrete values, a different one for each number of rows that we want for our partition.
 
-Expanded: salting was the manual, proactive technique for the skew problem described above - instead of shuffling by the original skewed key alone (e.g. a `customer_id` with a disproportionate row count), you engineer a new "salt" column holding a small set of discrete values (e.g. a random number from 0-9), and shuffle/partition by the *combination* of the original key plus that salt value. This artificially splits what would have been one oversized partition (all rows for that one heavy key) into several smaller ones (one per salt value), spreading that key's rows across multiple executors instead of dumping them all on one. It's listed here as **legacy** specifically because AQE (covered above) now handles this same rebalancing automatically and dynamically, based on real observed data at runtime, removing the need to manually engineer a salt column ahead of time - which is why the root-cause section above lists salting as one of the *older* proactive fixes, now largely superseded by AQE's reactive approach.
+Expanded: salting was the manual, proactive technique for the skew problem described above - instead of shuffling by the original skewed key alone (e.g. a `customer_id` with a disproportionate row count), you engineer a new "salt" column holding a small set of discrete values (e.g. a random number from 0-9), and shuffle/partition by the *combination* of the original key plus that salt value. This artificially splits what would have been one oversized partition (all rows for that one heavy key) into several smaller ones (one per salt value), spreading that key's rows across multiple executors instead of dumping them all on one. AQE (covered above) now handles much of this automatically for joins, but salting remains the manual fix when AQE doesn't apply (see the correction above).
+
+---
 
 Q. What are the concrete steps for applying salting?
 
 A. (Teacher's definition) What you do is that you add a new column that has these distinct values, then you use the `repartition()` method to adjust the partition sizes based on the values of the salted key column. Then, after the partitioning is done, the salted key column is removed because it's no longer needed.
 
-Expanded: three steps, matching what was just introduced above - (1) add the synthetic salt column with its discrete values, (2) call `repartition()` (a **wide transformation**, per the Narrow vs Wide Dependencies section above - it's what actually forces the shuffle/redistribution) using the combined original-key-plus-salt as the partitioning key, then (3) drop the salt column once partitioning has already happened, since it was only ever a temporary tool to influence *how* the shuffle spread the data - it carries no meaning in the actual dataset and would just be dead weight in the final output.
+Expanded: the three steps are (1) add the synthetic salt column with its discrete values, (2) repartition by the original key plus the salt, and (3) drop the salt column when it is no longer needed.
+
+Expanded (correction): `repartition(key, salt)` followed by dropping the salt does **not** fix skew on its own. The next wide operation (`groupBy("customer_id")` or `join(..., "customer_id")`) reshuffles by `customer_id` alone, and the hot key lands on one task again. The salt has to be part of the key **in the skewed operation itself**, and it can only be dropped after that operation. There are two real patterns (Training 8 covers the same caveat in detail):
+
+**Pattern 1 - two-stage aggregation (skewed `groupBy`):**
 
 ```python
-# 1. Add a salt column with discrete values
-salted = df.withColumn("salt", (rand() * 10).cast("int"))
+from pyspark.sql.functions import rand, col, sum as _sum
 
-# 2. Repartition using the original key + salt
-salted = salted.repartition("customer_id", "salt")
+N = 10
+salted = df.withColumn("salt", (rand() * N).cast("int"))
 
-# 3. Drop the salt column - no longer needed after partitioning
-result = salted.drop("salt")
+# Stage 1: partial aggregate per (key, salt) - the hot key is now spread over N tasks
+partial = salted.groupBy("customer_id", "salt").agg(_sum("amount").alias("partial_amount"))
+
+# Stage 2: combine the partials per real key - only N rows per key left to shuffle
+result = partial.groupBy("customer_id").agg(_sum("partial_amount").alias("total_amount"))
+```
+
+**Pattern 2 - salted join (skewed join):**
+
+```python
+from pyspark.sql.functions import rand, explode, array, lit
+
+N = 10
+# Big, skewed side: random salt 0..N-1 on every row
+orders_s = orders.withColumn("salt", (rand() * N).cast("int"))
+
+# Small side: copy every row N times, once per salt value
+customers_s = customers.withColumn("salt", explode(array(*[lit(i) for i in range(N)])))
+
+# Join on (key, salt), then the salt can be dropped
+joined = orders_s.join(customers_s, ["customer_id", "salt"]).drop("salt")
 ```
 
 | Approach | How it works | Status |
 |---|---|---|
-| Salting | Add a synthetic salt column → `repartition()` by (original key + salt) → drop the salt column once partitioning is done | Legacy - largely superseded |
-| AQE | Automatically detects and re-splits skewed partitions mid-job, based on real observed performance | Modern default |
+| Two-stage aggregation | `groupBy(key, salt)` then `groupBy(key)` | Standard fix for skewed aggregations |
+| Salted join | Random salt on the big side, small side exploded across all N salts, join on `(key, salt)` | Fix for skewed joins when AQE/broadcast isn't enough |
+| AQE skew join | Automatically splits oversized sort-merge-join partitions at runtime | Default first line for join skew (Spark 3.x) |
+| Broadcast the small side | No shuffle, so no skewed partition | Best option when one side is small |
+
+**Interview line ("How do you handle data skew?"):** "First I confirm it in the Spark UI - one task much slower than the median. Then, in order: filter out nulls or junk hot keys, broadcast the small side if I can, make sure AQE skew-join is on, and if it's still skewed, salt the key - a two-stage aggregation for `groupBy`, or a salted join with the small side exploded across the salt values."
 
 ---
 
@@ -1047,6 +1303,8 @@ result = salted.drop("salt")
 Q. What is caching, in Spark?
 
 A. (Teacher's definition) Caching - storing some frequently used data in memory so that it remains easily accessible during execution.
+
+---
 
 Q. What's a practical use case for caching?
 
@@ -1064,11 +1322,15 @@ Expanded: caching avoids redundant recomputation - by default (per Lazy Evaluati
 | Memory and Disk Serialized | Memory + disk, but data is serialized |
 | Memory Only Serialized | Memory only, but data is serialized |
 
+---
+
 Q. What does "serialized" mean in this context, and why is it useful?
 
 A. (Teacher's definition) Serialized means converting the data into a string of zeros and ones - this is useful in streaming.
 
-Expanded: serialization converts in-memory objects into a compact byte representation - trading some CPU cost (to serialize/deserialize) for a smaller memory footprint, which matters most in streaming workloads where data is continuously flowing through and memory pressure is a constant concern rather than a one-time job cost.
+Expanded: serialization converts in-memory objects into a compact byte representation - trading some CPU cost (to serialize/deserialize) for a smaller memory footprint.
+
+Expanded (correction): serialized storage levels are not specifically a streaming feature. They are useful in **any** workload where cached data is too big for memory as plain objects: you spend CPU to deserialize on each read, and in return the cache takes much less space and creates less garbage-collection pressure. The streaming link is historical: the old DStream API stored received data with a serialized level (`MEMORY_AND_DISK_SER_2`) by default.
 
 ### Cache vs. Persist (Common Interview Question)
 
@@ -1076,7 +1338,20 @@ Q. What's the difference between `cache()` and `persist()`?
 
 A. (Teacher's definition) It's actually PERSIST that has multiple levels, some of which involve only memory and others that involve disk only, and some combinations. Memory-only persist is equivalent to cache.
 
-Expanded: this is the corrected, accurate version of the relationship - worth flagging explicitly since it's easy to mix up (and the teacher raised it specifically as a common interview trap). The five storage levels listed above (Memory Only, Disk Only, Memory and Disk, and their serialized variants) are `persist()`'s levels, configurable per call - `cache()` isn't a separate mechanism with its own levels, it's simply a shorthand for `persist()` using the Memory Only level. So `df.cache()` and `df.persist(StorageLevel.MEMORY_ONLY)` do the same thing; `persist()` is the more general, configurable operation underneath.
+Expanded: the storage levels listed above (Memory Only, Disk Only, Memory and Disk, and their serialized variants) are `persist()`'s levels, configurable per call - `cache()` isn't a separate mechanism with its own levels, it's a shorthand for `persist()` with the default level.
+
+Expanded (correction): "memory-only persist is equivalent to cache" is true for **RDDs only**. The default level depends on the API:
+
+| API | `cache()` = | Default `persist()` level |
+|---|---|---|
+| RDD | `persist(StorageLevel.MEMORY_ONLY)` | `MEMORY_ONLY` - partitions that don't fit are recomputed from lineage |
+| DataFrame / Dataset | `persist(StorageLevel.MEMORY_AND_DISK)` (PySpark 3.x shows it as `MEMORY_AND_DISK_DESER`) | `MEMORY_AND_DISK` - partitions that don't fit spill to local disk |
+
+So `df.cache()` on a DataFrame already spills to disk; it is not memory-only. Both `cache()` and `persist()` are lazy: nothing is stored until the first action computes the data. Free it with `unpersist()`.
+
+**Interview line:** "`cache()` is just `persist()` with the default storage level. For RDDs that's MEMORY_ONLY; for DataFrames it's MEMORY_AND_DISK. `persist()` lets me pick the level - for example DISK_ONLY or a serialized level when the data is big. Both are lazy and fill on the first action."
+
+---
 
 Q. Why would you use `persist()` (with a disk-involving level) instead of `cache()`?
 
@@ -1084,11 +1359,15 @@ A. (Teacher's definition) Disk only caching is equivalent to [using] persist. Pe
 
 Expanded: this is the practical reason to reach for one of `persist()`'s disk-involving levels rather than plain `cache()`/Memory Only - if the dataset is too large to fit in the cluster's available RAM, a Memory Only cache either fails outright or forces Spark to recompute the uncached portion repeatedly (defeating the purpose of caching in the first place). A Disk Only or Memory and Disk level lets the data spill to each node's local disk instead, trading some read speed for reliability on datasets too big for memory.
 
+Expanded (correction): "persist" does not mean "disk". `persist()` with no argument uses the same default as `cache()` (MEMORY_ONLY for RDDs, MEMORY_AND_DISK for DataFrames); it only uses disk-only storage when you pass `StorageLevel.DISK_ONLY`.
+
 | | `cache()` | `persist()` |
 |---|---|---|
-| Storage levels | Only one - Memory Only | Configurable - Memory Only, Disk Only, Memory and Disk, and serialized variants |
-| Relationship | Shorthand for `persist(MEMORY_ONLY)` | The general, underlying operation |
-| When to prefer | Data comfortably fits in memory | Data too large to efficiently fit in memory - use a disk-involving level instead |
+| Storage levels | Only the default one | Any level you pass - Memory Only, Disk Only, Memory and Disk, serialized, replicated (`_2`) variants |
+| Default | RDD: MEMORY_ONLY; DataFrame: MEMORY_AND_DISK | Same as `cache()` when called with no argument |
+| When to prefer | Default level is fine | You need a specific level, e.g. `DISK_ONLY` for data much too big for memory |
+
+**Caching vs checkpointing:** `cache`/`persist` keep the lineage (lost blocks are recomputed) and live only for the application. `checkpoint()` writes the data to reliable storage (HDFS/S3) and **cuts the lineage**, which is useful for very long lineages (iterative jobs) and is required for stateful streaming.
 
 ### Broadcast Variables and Broadcast Joins
 
@@ -1103,9 +1382,13 @@ df = spark.read.csv("my_file.csv")
 broadcast_df = broadcast(df)
 ```
 
+---
+
 Q. What is a broadcast join, specifically, and why would you use one?
 
 A. (Teacher's definition) Broadcast join - a join which will join a table that is not broadcast to a table which IS broadcast. The reason you might want to use a broadcast join is usually going to involve joining a very large table to a much smaller table.
+
+---
 
 Q. Why does this actually improve performance - what's the reasoning behind it?
 
@@ -1130,6 +1413,10 @@ Expanded: this clarifies an easy-to-miss nuance - a broadcast join is asymmetric
 ---
 
 ## Anatomy of a Spark Application: Submission + HDFS Co-location
+
+Q. What does the "Anatomy of a Spark Application" slide show?
+
+A. How a cluster-mode submission, the Spark Master, workers/executors, and the HDFS layer fit together on the same machines.
 
 Expanded (from the class slide "Anatomy of a Spark Application"): this slide ties the submission flow together with where the data physically lives, in a `--deploy-mode cluster` YARN-style setup:
 
@@ -1169,6 +1456,8 @@ A. (Teacher's definition) The JVM gives us write once-run-anywhere capability.
 
 Expanded: this is the JVM's core value proposition - code compiled for the JVM doesn't target a specific operating system or CPU architecture directly, so the same compiled artifact runs unmodified on Windows, Linux, or macOS, on any hardware, as long as a JVM is installed there. This is exactly why a JAR file (see the earlier "What is a JAR file" discussion in this session) is portable in the first place - it's compiled once into JVM bytecode, not into machine code for one specific OS/CPU, and it's also the underlying reason Spark clusters can mix heterogeneous machines and still run the same compiled application code on every node.
 
+---
+
 Q. How does the JVM actually execute code to achieve this?
 
 A. (Teacher's definition) The way this is done is using the JVM to execute the code using a combination of compilation and interpretation.
@@ -1182,6 +1471,8 @@ Expanded: this is a two-stage process, not purely one or the other:
 
 This hybrid approach is what makes "write once, run anywhere" practical without sacrificing too much performance: the portable bytecode stays platform-independent, while JIT compilation claws back much of the speed a purely-interpreted language would otherwise lose. This is the same underlying execution model Scala and Spark's own JVM-based execution engine build on top of, which is why Scala/JAR-based Spark jobs and PySpark jobs (which still hand off to the JVM underneath for actual execution) both ultimately run through this same compile-then-interpret/JIT pipeline.
 
+---
+
 Q. What specifically does the compilation step (stage 1) produce?
 
 A. (Teacher's definition) What happens is that the javac compiler will compile the code - but NOT to machine code. The compiled code is in a language similar to machine code which is called Java Bytecode.
@@ -1193,6 +1484,8 @@ Expanded: `javac` is the Java compiler itself, and this is the key distinction f
 | `javac` | The Java compiler - turns `.java` source code into `.class` bytecode files |
 | Java Bytecode | The compiled output - a machine-code-like instruction set, but targeting the JVM (an abstract machine), not a real CPU/OS |
 | JVM | Interprets (and JIT-compiles) that bytecode into actual native machine code at runtime, per-platform |
+
+---
 
 Q. What is heap memory, in the context of the JVM?
 
@@ -1207,7 +1500,19 @@ Expanded: in general JVM terms, the **heap** is the region of memory where the J
 | On-heap memory | Standard JVM heap memory - where Spark objects normally live | The JVM's garbage collector - subject to GC pauses |
 | Off-heap memory | Memory allocated outside the JVM heap | Managed by Spark itself directly, not the JVM's GC |
 
+**Spark unified memory model (on-heap):** inside each executor's heap, Spark reserves ~300 MB, then splits the rest:
+
+| Region | Size (defaults) | Used for |
+|---|---|---|
+| Unified memory | `spark.memory.fraction` = 0.6 of (heap - 300 MB) | Shared by **execution** memory (shuffles, joins, sorts, aggregations) and **storage** memory (cached data, broadcasts). Execution can evict cached blocks down to `spark.memory.storageFraction` (0.5) |
+| User memory | The remaining 0.4 | Your own data structures, UDF objects, metadata |
+| Overhead (outside the heap) | `spark.executor.memoryOverhead` = max(384 MB, 10%) | JVM internals, Python worker processes (PySpark), network buffers |
+
+Common OOM / spill causes: a skewed partition, too few shuffle partitions (each one too big), `collect()` or a too-large broadcast (driver OOM), and PySpark UDFs exceeding the overhead (container killed by YARN with "exceeding memory limits" - raise `memoryOverhead`). When execution memory runs out, Spark **spills** to local disk instead of failing, which shows up as "Spill" in the Stages tab.
+
 Each Executor's Tasks write to that executor's own **on-heap memory** as their primary working memory. The diagram also shows Tasks reaching out to a separate **off-heap memory** region - off-heap storage exists specifically to hold data (e.g. cached DataFrames) outside JVM heap management, which avoids garbage-collection overhead/pauses on that data (controlled via `spark.memory.offHeap.enabled`/`spark.memory.offHeap.size`). This is the practical payoff of the earlier JVM section's compilation/bytecode coverage - since Spark's executors are JVM processes, they inherit the JVM's GC behavior for on-heap memory by default, and off-heap memory is Spark's way of opting specific data out of that GC overhead when it would otherwise become a performance bottleneck.
+
+---
 
 ## JVM Languages
 
@@ -1231,9 +1536,9 @@ Expanded: a JVM language is any programming language that compiles down to Java 
 
 ---
 
-# Agent Generated Notes
+# Additional Notes (from class)
 
-Additional material Evan covered in the live class recording that wasn't yet reflected above.
+Additional material from class.
 
 ## Why isn't executor/hardware sizing decided automatically by Spark?
 
@@ -1241,7 +1546,7 @@ Q. If the optimizer already decides so much automatically (logical/physical plan
 
 A. (Teacher's definition) "It's your responsibility as the programmer to write the spark submit command with the amount of hardware that you need already, because often what will happen in a professional environment... is that there are going to be multiple teams sharing the same cluster. If Spark decided the amount of hardware resources that it was going to use automatically, then that would mean that every time you run the Spark job it would use up either 100 percent or close to 100 percent of the entire cluster's resources, because there's no way for the software to know that it needs to reserve some compute for other teams. So that's why they've kept that as something that you have to decide as a human instead of just having Spark do it automatically. The logical plans and physical plans that the optimizer creates are going to be within the limitations that you have given it."
 
-Expanded: this draws a sharp line between what Catalyst's optimizer *is* and *isn't* responsible for. The optimizer (per the Optimizer section above) freely decides the *strategy* for executing a job - join algorithms, predicate pushdown, partition planning - all without programmer input. But it never decides *how much of the cluster's total hardware* to claim, because on a real multi-tenant cluster (the same JP Morgan Chase example referenced earlier in this file, where multiple teams shared one large cluster) nothing in Spark itself knows what other teams currently need. Auto-claiming resources would mean every job greedily grabs the whole cluster by default. This is why the executor-sizing math (cores/node ÷ 5, RAM/node ÷ executors-per-node, from the worked example above) is a human, `spark-submit`-time decision, not something the optimizer/AQE ever touches - AQE (also covered above) only ever adapts *within* the resource ceiling you already gave it, never expands past it.
+Expanded: this draws a sharp line between what Catalyst's optimizer *is* and *isn't* responsible for. The optimizer (per the Optimizer section above) freely decides the *strategy* for executing a job - join algorithms, predicate pushdown, partition planning - all without programmer input. But it never decides *how much of the cluster's total hardware* to claim, because on a real multi-tenant cluster (the teacher's JPMorgan Chase example in `Training 6.md`, where multiple teams shared one large cluster) nothing in Spark itself knows what other teams currently need. Auto-claiming resources would mean every job greedily grabs the whole cluster by default. This is why the executor-sizing math (cores/node ÷ 5, RAM/node ÷ executors-per-node, from the worked example above) is a human, `spark-submit`-time decision, not something the optimizer/AQE ever touches - AQE (also covered above) only ever adapts *within* the resource ceiling you already gave it, never expands past it.
 
 ---
 
@@ -1259,6 +1564,8 @@ Expanded: both techniques solve the same underlying problem - deliberately split
 | Deterministic? | Yes - same row always hashes to the same bucket | No - salt value is randomly assigned each time |
 | Where it lives | A property of how a Hive table is physically stored | A temporary column added, then dropped, during a Spark job |
 
+Expanded (correction): Hive and Spark bucketing do **not** use a cryptographic hash (like SHA or MD5 - those would be needlessly slow). They use fast non-cryptographic hashes: Hive's hashCode-based function (Murmur3 for bucketing version 2 in Hive 3+), and Spark's Murmur3. The bucket is `hash(column) mod number_of_buckets`. Because Hive and Spark use different hash functions, Spark-written buckets are not compatible with Hive-written buckets. In the table above, read "cryptographic hash" as "deterministic hash".
+
 ---
 
 ## Broadcast Join Size Guideline
@@ -1267,11 +1574,26 @@ Q. Is there a concrete size threshold for what's safe to broadcast in a broadcas
 
 A. (Teacher's definition) "You're only ever going to want to broadcast smaller tables, so generally the limit is considered to be about five gigabytes - that's of course going to change depending on how big the cluster that you're running is, but usually it's going to be a five gigabyte table or less that you might want to broadcast."
 
+---
+
 Q. How do you know how much memory a table will actually consume before deciding whether to broadcast it?
 
 A. (Teacher's definition) "You can analyze how much data a table is going to consume... you just do that with a normal operation of checking the file size. If the file is five gigabytes, then when it's loaded into memory it's also going to be five gigabytes."
 
-Expanded: this gives the Broadcast Variables/Joins section above (which only said "genuinely small tables") an actual concrete rule of thumb - roughly 5GB as the practical ceiling for what's safe to copy into every executor's memory, scaling with however much RAM the cluster's nodes actually have available. The estimation method is deliberately simple: on-disk file size is treated as a reasonable proxy for in-memory size, so checking a file's size on disk is usually sufficient to decide whether it's a broadcast candidate, without needing to actually load it first. Also worth noting the order of operations this implies: you decide what to broadcast *while writing the job's code* (based on the data itself), which happens independently of - and generally before - deciding the `spark-submit` executor memory/core settings covered earlier in this file.
+Expanded (correction): both numbers need fixing.
+
+| Fact | Correct value |
+|---|---|
+| Automatic broadcast threshold | `spark.sql.autoBroadcastJoinThreshold` = **10 MB** by default. Spark only broadcasts automatically below this (AQE uses a similar runtime threshold) |
+| Hard limit | A broadcast relation cannot exceed **8 GB**; Spark fails the query above that |
+| Practical size | Tens to a few hundred MB. The table is collected to the **driver** first and then copied to **every executor**, so a 5 GB broadcast costs 5 GB+ on the driver and on each executor, and often causes OOM or timeouts |
+| On-disk vs in-memory size | Not the same. Parquet/ORC are compressed and encoded, so the in-memory size is often **3-10x** the file size. Check Spark's estimate with `df.explain("cost")` or the SQL tab, not just the file size |
+
+To broadcast something larger than 10 MB on purpose, use `broadcast(df)` or the `/*+ BROADCAST(t) */` hint (or raise the threshold), then confirm `BroadcastHashJoin` in `df.explain()`. Setting the threshold to `-1` disables automatic broadcasting.
+
+**Interview line:** "Spark auto-broadcasts tables under 10 MB by default; I can force a bigger one with a broadcast hint, but it has to fit in driver and executor memory, the hard limit is 8 GB, and compressed Parquet gets several times bigger in memory."
+
+Also worth noting the order of operations this implies: you decide what to broadcast *while writing the job's code* (based on the data itself), which happens independently of - and generally before - deciding the `spark-submit` executor memory/core settings covered earlier in this file.
 
 ---
 
@@ -1300,4 +1622,3 @@ Expanded: this is the concrete historical problem the "write once, run anywhere"
 Q. Where does the term "predicate" (as in predicate pushdown) actually come from?
 
 A. (Teacher's definition, explicitly flagged as optional trivia) "Predicates are a reference to a kind of formal logic... that field is predicate logic, and predicate logic is one of the philosophical antecedents to SQL - there was a long philosophical tradition dating back to Aristotle of formal logic, and in the 20th century there was a guy by the name of Gottlob Frege, a German mathematician, who formalized [predicate logic]... the way predicate logic works was one of the intellectual underpinnings of logic programming, so things like Prolog - and logic programming is a direct ancestor of SQL." The teacher was explicit that "if you're not a data and philosophy enthusiast you don't necessarily need to know this" - it's background curiosity, not interview-relevant material, unlike the practical predicate pushdown mechanism itself (already covered in detail in the Optimizer section above).
-

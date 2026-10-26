@@ -114,6 +114,8 @@ A.
 | Speed | Slower | Much faster |
 | Use case | BIOS, firmware, permanent instructions | Running programs, temporary working data |
 
+Expanded: For data engineering, ROM barely matters - it only holds firmware/boot code. RAM is the one that matters, because it decides how much data an engine like Spark can hold in memory before it spills to disk (see the next two Qs).
+
 ---
 
 Q. Two terms frequently used in Data Engineering: Memory and Disk - what do they mean?
@@ -138,6 +140,8 @@ Expanded:
 Q. What is Memory in data engineering?
 
 A. Refers to in-memory computing - processing data in RAM instead of reading/writing disk on every step. Core reason engines like Apache Spark are fast (process in RAM across a cluster vs MapReduce writing intermediate results to disk).
+
+Expanded:
 - Memory (RAM): fast, limited/expensive, volatile - used for active computation, caching, shuffles
 - Disk: slower, cheap/large, persistent - used for storage, checkpoints, final output
 - Running out of memory during processing causes spilling to disk (slower) or OOM (out-of-memory) errors
@@ -147,7 +151,7 @@ A. Refers to in-memory computing - processing data in RAM instead of reading/wri
 |---|---|---|
 | Used for | Active computation, caching, shuffles | Storage, checkpoints, final output |
 | Cost/Capacity | Limited, expensive | Cheap, large |
-| Failure mode | OOM (out-of-memory) errors | Spilling (slower but recoverable) |
+| When memory runs out | Spark spills data to disk (slower, but the job continues) or, if it can't spill, the job fails with OOM (out-of-memory) | Receives the spilled data |
 | Example tools | Redis, Memcached, Apache Arrow | HDFS, S3, local disk |
 
 ---
@@ -245,6 +249,8 @@ Key ideas:
 | High throughput for large sequential reads/writes | NameNode can be a bottleneck/single point of failure (mitigated with HA setups, but adds complexity) |
 | Integrates natively with the Hadoop/Spark ecosystem | Increasingly being replaced by cloud object storage (e.g. S3) in modern architectures |
 
+See Training 6 and Training 7 for HDFS in depth.
+
 ---
 
 Q. What are Processing Engines?
@@ -312,6 +318,8 @@ Note on Hive: Hive was the original SQL-on-Hadoop data warehouse - it let you wr
 
 Pipeline: HDFS (storage) -> Spark (extract + transform, in-memory across the cluster) -> Data Warehouse / Hive / Delta Lake / Snowflake (load, for querying and analysis)
 
+See Training 7 and Training 8 for Spark architecture, jobs/stages/tasks and tuning in depth.
+
 | Pros | Cons |
 |---|---|
 | In-memory processing - much faster than disk-based MapReduce, especially for iterative jobs | Memory-hungry - large jobs can hit OOM errors if the cluster doesn't have enough RAM |
@@ -372,7 +380,7 @@ Note: this is exactly why data gets extracted out of an OLTP database and loaded
 
 Q. OLAP vs OLTP - expanded
 
-A.
+A. This is the side-by-side version of the OLAP table (under "What is Hive?") and the OLTP table (under "What is OLTP?") above.
 
 | | OLTP (Online Transaction Processing) | OLAP (Online Analytical Processing) |
 |---|---|---|
@@ -390,11 +398,31 @@ Why the distinction matters:
 - OLAP systems are tuned for scanning huge volumes of data - denormalization and columnar storage (Parquet, ORC) trade write-speed for much faster aggregation/read performance.
 - You generally don't run analytics directly on an OLTP database - heavy analytical queries would slow down (or lock) the live application. This is exactly why data gets extracted out of OLTP systems and loaded into an OLAP warehouse - it's the real-world reason ETL/ELT pipelines exist in the first place.
 
+**Interview line:** "OLTP runs the application - many small, fast, ACID reads and writes on normalized tables, like Postgres behind a checkout page. OLAP answers business questions - few large scans and aggregations over history, on denormalized, columnar storage like Snowflake or Redshift. We copy data from OLTP into OLAP with ETL/ELT so analytics never slows down the live app."
+
+---
+
+Q. What is a Data Warehouse?
+
+A. A data warehouse is a central analytical (OLAP) database that holds cleaned, structured, historical data from many source systems, organized for reporting and analysis.
+
+Expanded: Data is modeled before it is loaded (schema-on-write), usually into star schemas of fact and dimension tables. Modern warehouses store data in columnar format and run queries with MPP (massively parallel processing - many nodes each scan part of the data). Examples: Snowflake, BigQuery, Redshift, Azure Synapse; Hive was the Hadoop-era version. See Training 5 for dimensional modeling.
+
+| Trait | Data Warehouse |
+|---|---|
+| Schema | Schema-on-write (defined before load) |
+| Storage | Columnar, compressed |
+| Execution | MPP - query split across many nodes |
+| Data | Cleaned, integrated, historical |
+| Users | Analysts, BI dashboards |
+
 ---
 
 Q. What is a Data Lake? What are the other storage destination options?
 
 A. A data lake is a storage repository that holds raw data in its native format - structured, semi-structured, or unstructured - until it's needed, rather than transforming it into a fixed schema before storing it (as a warehouse does).
+
+Expanded: In practice a data lake is files (CSV, JSON, Parquet, images, logs) sitting in cheap object storage such as S3 or ADLS Gen2. Storage and compute are separate: engines like Spark, Athena or Trino read the files when you query them (schema-on-read). The risk is a "data swamp" - without a catalog, layers (medallion) and table formats, nobody knows what the files mean. Lakehouses fix this by adding a table format (Delta, Iceberg) on top.
 
 | | Data Warehouse | Data Lake | Data Lakehouse |
 |---|---|---|---|
@@ -407,6 +435,8 @@ A. A data lake is a storage repository that holds raw data in its native format 
 Other related concept - Data Mart: a smaller, focused subset of a data warehouse built for one team/department (e.g. a "Marketing" or "Finance" mart).
 
 Note: plain operational/OLTP databases (MySQL, Postgres) aren't part of this comparison - they're built for fast transactions, not analytical storage/querying.
+
+---
 
 Q. What is the Medallion Architecture? (What are all the layers to a Data Lake?)
 
@@ -432,6 +462,8 @@ Why layer it this way:
 - Gold is optimized for consumption - fast queries, pre-aggregated, matches exactly what a report or ML model needs
 - Each layer has a clear owner/purpose, so pipelines don't become one giant tangled transform
 
+Additional class point: in a streaming pipeline, the Bronze layer is a landing destination written by the consumer, not part of the producer/broker/consumer plumbing (see "Is the Bronze layer part of the producer/broker/consumer?" in Additional Notes below).
+
 ---
 
 Q. What file formats are used to store data (e.g. in a data lake)?
@@ -449,6 +481,8 @@ A.
 Row-based vs Columnar - why it matters:
 - Row-based (CSV, JSON, Avro): stores each full record together - good for writing/ingesting data quickly (Bronze layer)
 - Columnar (Parquet, ORC): stores each column together - much faster for analytical queries that only need a few columns out of many (Silver/Gold layers, warehouses)
+
+---
 
 Q. What are Open Table Formats (OTF)? (a layer on top of file formats)
 
@@ -469,8 +503,16 @@ The major OTF formats (Teacher's definitions):
 | Format | Created by | Status | Notes |
 |---|---|---|---|
 | Apache Iceberg | Originally Netflix, now Apache | Open source standard - most common | Vendor-neutral, broad engine support (Spark, Trino, Flink, etc.) |
-| Delta Lake | Databricks | Most common proprietary format | Deepest integration with Spark/Databricks - use it specifically when working in Databricks |
+| Delta Lake | Databricks (donated to the Linux Foundation in 2019) | Open source (Apache 2.0), Databricks is its main backer | Deepest integration with Spark/Databricks, also runs on plain Spark, Trino, Flink, and is Microsoft Fabric's native format |
 | Apache Hudi | Originally Uber, now Apache | Lower priority to learn | Strong focus on fast upserts/incremental data (streaming-heavy use cases) - just know it exists |
+
+Expanded (correction): Delta Lake itself is not proprietary. It is open source (Apache 2.0) and has been a Linux Foundation project since 2019. What is proprietary are some Databricks-only features built on top of it (for example parts of Unity Catalog and Databricks' performance features). Delta also runs outside Databricks - on open-source Spark, Trino, Flink, and as the native table format in Microsoft Fabric (see Training 31). Iceberg is the most vendor-neutral of the three. Delta UniForm and Iceberg REST catalogs let the two formats interoperate.
+
+| Claim | Correct fact |
+|---|---|
+| "Delta is proprietary" | Open source, Apache 2.0, Linux Foundation |
+| "Only use Delta with Databricks" | Delta is the default on Databricks and Fabric, but it runs on plain Spark, Trino, Flink |
+| Most vendor-neutral format | Apache Iceberg |
 
 ---
 
@@ -541,6 +583,8 @@ Is ETL legacy? Not obsolete, but partially displaced by ELT in modern cloud-nati
 | Raw data is available immediately and can be re-transformed anytime without re-extracting | Raw (possibly messy/sensitive) data lands in the warehouse before being cleaned |
 | Leverages the warehouse's own powerful, cheap compute (Snowflake/BigQuery/Redshift) | Requires a powerful (and potentially expensive) destination warehouse |
 | Simpler pipeline - fewer moving parts, pairs well with tools like dbt | Storage costs for keeping raw data around; compliance risk if PII isn't filtered before landing |
+
+**Interview line:** "ETL transforms data before loading it - I'd pick it when data must be cleaned or PII masked before it lands, or the destination can't do heavy compute. ELT loads raw data first and transforms it inside the warehouse with SQL or dbt - it's the modern default for Snowflake, BigQuery, Redshift and lakehouses, because raw data stays available and I can re-transform without re-extracting."
 
 ---
 
@@ -619,6 +663,8 @@ Expanded: Apache Kafka is a distributed event streaming platform - it's the tool
 | Broker | A Kafka server that stores and serves the data; multiple brokers form a Kafka cluster |
 | Retention | Kafka keeps messages for a configurable period (not just "delivered and gone"), so consumers can replay/reprocess if needed |
 
+Note on the "1,000 messages per second" number: it is a rule of thumb for when Kafka starts to be worth its complexity, not a Kafka limit. Production Kafka clusters routinely handle hundreds of thousands to millions of messages per second.
+
 Producer, Broker, Consumer - the core flow:
 
 ```
@@ -649,8 +695,18 @@ Alternatives to Kafka (Teacher's definition): RabbitMQ, MQTT, AWS SQS - simpler 
 |---|---|---|
 | RabbitMQ | Traditional message queuing between services | Flexible routing, but lower throughput than Kafka |
 | MQTT | Lightweight messaging for IoT/low-power devices | Designed for small, resource-constrained devices, not high-volume streams |
-| AWS SQS | Simple, fully-managed queue for decoupling AWS services | Easy to set up, but not built for Kafka-scale throughput |
+| AWS SQS | Simple, fully-managed queue for decoupling AWS services | Easy to set up and scales to very high throughput, but it is a queue: no replay, one consumer group |
 | Apache Kafka | High-volume event streaming (1,000+ messages/sec) | The choice when Batch Processing vs Streaming volume/durability actually matters at scale |
+
+Expanded (correction): Volume is not really the dividing line. SQS standard queues scale to nearly unlimited throughput. The real difference is queue vs log. MQTT is also a protocol, not a product - brokers such as Mosquitto or HiveMQ implement it.
+
+| | Queue (SQS, RabbitMQ) | Log (Kafka, Kinesis) |
+|---|---|---|
+| After a message is consumed | Deleted | Kept until retention expires |
+| Replay old messages | No | Yes - reset the offset |
+| Multiple independent readers | No - one consumer group shares the work | Yes - many consumer groups each read everything |
+| Ordering | Not guaranteed (SQS FIFO queues add it) | Ordered within a partition/shard |
+| Typical use | Task/job queues, decoupling services | Event streaming, replayable pipelines |
 
 ---
 
@@ -678,16 +734,28 @@ Second 3 data -> [processed during second 4]      } collecting the next window
 
 Note: this is why Spark Structured Streaming appears in the Streaming column of the Batch vs Streaming table above, but architecturally it's really running a continuous loop of tiny batch jobs rather than true per-record streaming like Flink.
 
+Expanded (correction): The "one second" window is an illustration, not a Spark default. With Spark's default trigger, the next micro-batch starts as soon as the previous one finishes. You set a fixed interval yourself, for example `.trigger(processingTime="10 seconds")`. Typical micro-batch latency is about 100 ms to a few seconds. See Training 15 for triggers.
+
+| Trigger | Behavior |
+|---|---|
+| Default (none set) | Next micro-batch starts as soon as the previous one finishes |
+| `processingTime="10 seconds"` | One micro-batch every 10 seconds |
+| `availableNow=True` | Process everything available now in batches, then stop |
+
 The other option (Teacher's definition): True real time streaming processing, using an application called Apache Flink.
+
+---
 
 Q. What is Apache Flink?
 
 A. Apache Flink is a processing engine built for true real-time, record-by-record stream processing - as opposed to Spark Structured Streaming's micro-batch approach, Flink processes each event individually the moment it arrives, giving the lowest possible latency (milliseconds).
 
+Expanded: Flink keeps state for each key (for example a running count per user) inside the engine and checkpoints it regularly, so it can recover after a failure without losing or double-counting events. It is strong at event-time windows and late data. It is open source and offered as a managed service (Amazon Managed Service for Apache Flink, Confluent). See Training 13 for Spark vs Flink in depth.
+
 | | Spark Structured Streaming | Apache Flink |
 |---|---|---|
-| Processing model | Micro-batch - tiny batches every ~1 second | True streaming - one record at a time |
-| Latency | Near-real-time (~1 second) | True real-time (milliseconds) |
+| Processing model | Micro-batch - a continuous loop of small batches | True streaming - one record at a time |
+| Latency | Near-real-time (~100 ms to a few seconds) | True real-time (milliseconds) |
 | Built on top of | Spark's existing batch engine | A streaming-first engine, built from the ground up for streaming |
 | When to choose | Good enough for most near-real-time use cases, and easier if you're already using Spark | When you genuinely need the lowest possible latency - e.g. fraud detection, industrial monitoring, high-frequency trading |
 
@@ -698,6 +766,8 @@ Q. What is Idempotency? (To make something idempotent)
 A. (Teacher's definition) An idempotent process is one in which if you do it multiple times, you won't accumulate the same result over and over again unless you've specifically designed it to. Basically, we want processes to be idempotent so that we do not generate unnecessary duplicate data.
 
 Expanded: This matters a lot in data pipelines - if a batch job or streaming consumer fails partway through and has to retry, you want re-processing the same data to be safe, not create duplicate rows or double-count something. A non-idempotent pipeline that gets re-run (due to a retry, a scheduler bug, or manual reprocessing) can silently corrupt downstream data by inserting the same records twice.
+
+**Interview line:** "An idempotent pipeline gives the same result no matter how many times it runs. I make jobs idempotent by writing with MERGE/upsert on a business key, or by overwriting the whole partition for the run date instead of appending, and by tracking checkpoints or offsets - so a retry or backfill never creates duplicates."
 
 Common ways to make a process idempotent:
 - Use UPSERT/MERGE instead of INSERT (insert-or-update based on a key, rather than blindly appending)
@@ -711,6 +781,8 @@ Common ways to make a process idempotent:
 | `UPSERT INTO orders ON CONFLICT (order_id) DO UPDATE` run twice | Yes | Second run just re-updates the same row, no duplicate |
 | Overwriting a partition with today's data, run twice | Yes | Second run replaces the same partition with the same result |
 | Appending today's batch file to a table, run twice | No | Appends the same data a second time |
+
+See "Idempotency: a concrete example" in Additional Notes below for the column-rename example from class.
 
 ---
 
@@ -730,6 +802,40 @@ A. This ties directly into idempotency above - a lot of error handling exists so
 | Delivery guarantees | Define what happens to a message on failure - at-most-once, at-least-once, exactly-once | Kafka can be configured for exactly-once processing semantics |
 
 Key principle: good error handling in big data isn't about preventing all failures (impossible at scale) - it's about designing for failure: failures should be retryable, isolated (one bad record shouldn't kill the whole job), observable (you get alerted), and recoverable (checkpointing/idempotency mean you don't lose or duplicate data when you retry).
+
+---
+
+Q. What are delivery semantics (at-most-once, at-least-once, exactly-once)?
+
+A. Delivery semantics describe what a streaming system promises about each message when something fails.
+
+Expanded: The difference comes down to when the consumer commits its offset (marks a message as done) compared with when it writes the result.
+
+| Semantics | What can happen | How it happens | Use when |
+|---|---|---|---|
+| At-most-once | Messages can be lost, never duplicated | Offset committed before processing; a crash loses the message | Losing a few events is fine (some metrics, logs) |
+| At-least-once | Never lost, but can be duplicated | Offset committed after processing; a crash means reprocessing | The common default - pair it with idempotent writes |
+| Exactly-once | Each message affects the result once | Transactions plus checkpoints (Kafka transactions, Spark/Flink checkpoints with an idempotent or transactional sink) | Money, billing, counts that must be exact |
+
+**Interview line:** "At-least-once means no data loss but possible duplicates; exactly-once means each event counts once. In practice I get effectively exactly-once by running at-least-once delivery with checkpoints and an idempotent sink, like a MERGE on an event ID."
+
+---
+
+Q. What is the difference between Lambda and Kappa architecture?
+
+A. Two patterns for combining batch and real-time processing.
+
+Expanded: Lambda architecture runs two paths side by side: a batch layer that reprocesses all history for accurate results, and a speed layer that handles new data in real time; a serving layer merges both. Its weakness is maintaining the same logic twice. Kappa architecture uses only a stream: everything is processed as a stream, and to reprocess history you replay the log (for example Kafka with long retention) through the same code.
+
+| | Lambda | Kappa |
+|---|---|---|
+| Paths | Batch layer + speed layer + serving layer | Stream only |
+| Reprocessing | Rerun the batch layer | Replay the log through the stream job |
+| Main pro | Accurate batch results plus low latency | One codebase |
+| Main con | Two codebases for the same logic | Depends on a replayable log and a strong stream engine |
+| Example | Spark batch nightly + Spark Streaming for live data | Kafka + Flink (or Spark Structured Streaming) only |
+
+**Interview line:** "Lambda keeps a batch layer for accuracy and a speed layer for freshness, at the cost of maintaining logic twice. Kappa treats everything as a stream and reprocesses by replaying the log. Lakehouse tools like Delta or Iceberg tables that accept both streaming and batch writes have made a single-pipeline, Kappa-like design much more common."
 
 ---
 
@@ -847,6 +953,8 @@ Expanded: CI/CD (Continuous Integration/Continuous Deployment) tools automate th
 
 Note: this list is non-exhaustive ("etc.") - the common thread across all of them is automating test/build/deploy so pipeline changes get validated and shipped safely, tying into the admin/tooling work below.
 
+See Training 3 and Training 4 for Git workflow and CI/CD in depth.
+
 ---
 
 Q. What admin work may a data engineer get asked to do?
@@ -871,15 +979,11 @@ Note: this kind of work often gets left out of the "cool" parts of data engineer
 
 ---
 
-# Agent Generated Notes (from Class Recording)
-
-Generated by comparing the full Training 0 class recording transcript against the notes above. These are things Evan covered live that weren't yet captured. Sourced from the recording (not directly typed by the student), so labeled "(From class recording)" rather than "(Teacher's definition)."
-
-## CPU vs GPU
+# Additional Notes (from class)
 
 Q. What is the difference between a CPU and a GPU?
 
-A. (From class recording) A CPU is the part of your computer that actually, literally is a computer - that's where the actual processing is done. It's a general purpose processing engine, designed to handle pretty much any kind of process a normal computer creates at any given time. GPUs are like CPUs in that they're also microprocessors made of silicon, but they're highly specialized in one domain of mathematics called matrix multiplication - they're very good at multiplying matrices (think of a data structure as a line, then another line, forming a square/rectangle). GPUs are good at multiplying those squares/rectangles by other squares/rectangles, which is exactly how pixels are represented on a screen (hence "graphics processing unit"). This same matrix-multiplication strength is also exactly what a machine learning model needs (inputs converted to numbers, multiplied through layer after layer), which is why GPUs are also very good for ML/AI.
+A. (From class) A CPU is the part of your computer that actually, literally is a computer - that's where the actual processing is done. It's a general purpose processing engine, designed to handle pretty much any kind of process a normal computer creates at any given time. GPUs are like CPUs in that they're also microprocessors made of silicon, but they're highly specialized in one domain of mathematics called matrix multiplication - they're very good at multiplying matrices (think of a data structure as a line, then another line, forming a square/rectangle). GPUs are good at multiplying those squares/rectangles by other squares/rectangles, which is exactly how pixels are represented on a screen (hence "graphics processing unit"). This same matrix-multiplication strength is also exactly what a machine learning model needs (inputs converted to numbers, multiplied through layer after layer), which is why GPUs are also very good for ML/AI.
 
 | | CPU | GPU |
 |---|---|---|
@@ -887,11 +991,11 @@ A. (From class recording) A CPU is the part of your computer that actually, lite
 | Good for | Everyday computing, ordinary data engineering (Spark) workloads | Computer graphics (pixels = matrices of color values), machine learning/AI (layers of numeric matrix math) |
 | Relevance to data engineering | For everyday Spark data processing, GPUs are pretty much irrelevant - CPUs are what you use | Critical for AI/ML workloads - running AI on CPU-only hardware is "very very painfully slow" |
 
-## x86 vs ARM Processor Architecture
+---
 
 Q. What is the difference between an x86 processor and an ARM processor?
 
-A. (From class recording) ARM uses a smaller/simpler set of instructions, which is power efficient (doesn't consume as much energy/heat). x86 is capable of handling a more varied set of instructions to run more complex operations in fewer steps, but requires more power and cooling to run.
+A. (From class) ARM uses a smaller/simpler set of instructions, which is power efficient (doesn't consume as much energy/heat). x86 is capable of handling a more varied set of instructions to run more complex operations in fewer steps, but requires more power and cooling to run.
 
 | | x86 | ARM |
 |---|---|---|
@@ -899,19 +1003,21 @@ A. (From class recording) ARM uses a smaller/simpler set of instructions, which 
 | Power/heat | Requires more power and cooling | Power efficient, generates less heat |
 | Typical use | Laptops/desktops | Mobile devices (iOS/Android) - different architectures mean software needs a completely separate build for each; also increasingly popular in data centers for the same energy/heat efficiency reasons |
 
-Note: ARM was originally brought in as mobile device architecture (low energy cost, less heat), but for those exact same reasons it's also become very popular in data centers - most average data center machines today run ARM, not x86.
+Note: ARM was originally brought in as mobile device architecture (low energy cost, less heat), and for those exact same reasons it's also become very popular in data centers (AWS Graviton, Azure Cobalt, Google Axion, Ampere).
 
-## Data Centers: Energy and Heat
+Expanded (correction): ARM's share of data centers is growing fast because of better price/performance per watt, but x86 (Intel/AMD) still runs the large majority of servers. On AWS, Graviton (ARM) instances are often cheaper for the same Spark/EMR workload.
+
+---
 
 Q. What are a data center's two biggest operational considerations?
 
-A. (From class recording) How much energy you're consuming (the electricity bill can get very high) and how much heat your computers are generating (data centers need air conditioning, since machines failing from excess heat is a real risk - the less heat generated for the same compute, the better for the data center's operation). A data center is basically a warehouse full of computers, used either for a company's own operations or rented out to third parties - which is what cloud computing fundamentally is (a provider with so many data centers that they can rent out capacity for money).
+A. (From class) How much energy you're consuming (the electricity bill can get very high) and how much heat your computers are generating (data centers need air conditioning, since machines failing from excess heat is a real risk - the less heat generated for the same compute, the better for the data center's operation). A data center is basically a warehouse full of computers, used either for a company's own operations or rented out to third parties - which is what cloud computing fundamentally is (a provider with so many data centers that they can rent out capacity for money).
 
-## Distributed Systems: Peer-to-Peer Networks (contrast to Compute Cluster)
+---
 
 Q. What's the difference between a peer-to-peer network and a compute cluster?
 
-A. (From class recording) Both are types of distributed systems, but a peer-to-peer network functions entirely over the internet (you download a program, and data sharing happens between your computer and any other computer on the internet running that same application). A compute cluster instead requires the machines to be in the same room with a wired connection between them.
+A. (From class) Both are types of distributed systems, but a peer-to-peer network functions entirely over the internet (you download a program, and data sharing happens between your computer and any other computer on the internet running that same application). A compute cluster instead requires the machines to be in the same room with a wired connection between them.
 
 | | Peer-to-Peer Network | Compute Cluster |
 |---|---|---|
@@ -921,21 +1027,27 @@ A. (From class recording) Both are types of distributed systems, but a peer-to-p
 
 Note: this is exactly why data engineering is still very much a "cluster forward" style of computing - security via a closed, wired, local network.
 
-## Compute Cluster: How Machines Actually Connect (SSH, Local IPs, Switches)
+Expanded (correction): Physical co-location is not required. Cloud clusters (EMR, Databricks, Dataproc) are VMs on a private virtual network (VPC/VNet), sometimes spread across racks or availability zones. The real requirement is a low-latency, private network between the nodes - not the same room or a wired cable you can see.
 
-A. (From class recording) When you plug multiple computers into a router, each computer gets a local IP address. Using that local IP address, you use a program called SSH to access one computer from another - this is the underlying technical basis for sharing data across the cluster's computers. A switch is an optional extra you can plug into your router to get more local IP addresses (i.e. connect more computers). The cluster's router does not need to provide internet access - it optionally can, but all that's actually required is the router being plugged in and an Ethernet cable connecting each computer to it.
+---
 
-## Is MongoDB a Data Lake?
+Q. How do the machines in a compute cluster actually connect (SSH, local IPs, switches)?
+
+A. (From class) When you plug multiple computers into a router, each computer gets a local IP address. Using that local IP address, you use a program called SSH to access one computer from another - this is the underlying technical basis for sharing data across the cluster's computers. A switch is an optional extra you can plug into your router to get more local IP addresses (i.e. connect more computers). The cluster's router does not need to provide internet access - it optionally can, but all that's actually required is the router being plugged in and an Ethernet cable connecting each computer to it.
+
+---
 
 Q. Can MongoDB be used as a data lake?
 
-A. (From class recording) No. Any database could theoretically be used as a data lake if it can accept pretty much any kind of data - but MongoDB specifically has to accept JSON-formatted data, and because of that constraint, it can't really be used as a data lake. A true data lake requires either a regular file system (like the one you browse with your OS's folder manager) or an object store like AWS S3 or Azure Data Lake Storage - something with no format constraint on what you put into it.
+A. (From class) No. Any database could theoretically be used as a data lake if it can accept pretty much any kind of data - but MongoDB specifically has to accept JSON-formatted data, and because of that constraint, it can't really be used as a data lake. A true data lake requires either a regular file system (like the one you browse with your OS's folder manager) or an object store like AWS S3 or Azure Data Lake Storage - something with no format constraint on what you put into it.
 
-## Streaming: Managed Cloud Alternatives to Kafka
+Expanded (correction): The conclusion is right, but the reason is more precise than "it only accepts JSON". MongoDB stores BSON (binary JSON) documents and can even hold binary files through GridFS. The real reasons it is not a data lake: storage cost per GB is much higher than object storage, compute and storage are not separated, and the data is not kept in open file formats (Parquet, CSV) that many engines (Spark, Athena, Trino) can read directly.
+
+---
 
 Q. What are the cloud-managed alternatives to running your own Kafka cluster?
 
-A. (From class recording) The big problem with Kafka is managing the broker - it runs on a distributed compute cluster with complex mechanisms for tracking/storing messages and handling node failures (electing a new primary node, etc.), which gets complicated fast. Cloud providers offer managed alternatives that remove this complexity:
+A. (From class) The big problem with Kafka is managing the broker - it runs on a distributed compute cluster with complex mechanisms for tracking/storing messages and handling node failures (electing a new primary node, etc.), which gets complicated fast. Cloud providers offer managed alternatives that remove this complexity:
 
 | Service | Provider | What it replaces |
 |---|---|---|
@@ -948,19 +1060,25 @@ The tradeoff: Kinesis (and equivalents) charge per message, which can add up to 
 
 Note: the producer/broker/consumer architecture is the same across Kafka, MQTT, and AWS SQS - the only real difference is which one is suited to your message volume (SQS/MQTT for smaller scale, Kafka for 1,000+ messages/sec).
 
-## Idempotency: A Concrete Example
+Expanded (correction): The bigger difference is queue vs log, not volume - SQS scales very high but deletes messages once consumed and has no replay. See the queue vs log table under "What is Apache Kafka?" above.
 
-A. (From class recording) Suppose a process is instructed to "add `_1` to the end of a column's name." If the process is idempotent, calling it repeatedly still results in just one `_1` suffix - the second call notices the suffix is already there and does nothing further. If it's NOT idempotent, calling it repeatedly keeps appending `_1_1_1_1...` every time it's called, and the more the function gets called, the more the data degrades. This is why designing idempotent processes matters: you want a change made exactly once, regardless of how many times the triggering call happens to fire.
+---
 
-## Bronze Layer Clarification: It's Not the Producer/Broker/Consumer
+Q. Idempotency: a concrete example
 
-A. (From class recording) In a streaming + Medallion Architecture pipeline, the Bronze layer is never the producer, broker, or consumer - those are the streaming pipeline's plumbing. The Bronze layer is a downstream storage destination: the consumer receives and processes streamed data, then either writes it into an OLTP database (for immediate/fast access) or into the Bronze layer of a data lakehouse (for eventual long-term analytics). Bronze is an endpoint the data lands at after the consumer is already done with it - not part of the streaming architecture itself.
+A. (From class) Suppose a process is instructed to "add `_1` to the end of a column's name." If the process is idempotent, calling it repeatedly still results in just one `_1` suffix - the second call notices the suffix is already there and does nothing further. If it's NOT idempotent, calling it repeatedly keeps appending `_1_1_1_1...` every time it's called, and the more the function gets called, the more the data degrades. This is why designing idempotent processes matters: you want a change made exactly once, regardless of how many times the triggering call happens to fire.
 
-## Git Flow / Branching Strategy
+---
+
+Q. Is the Bronze layer part of the producer/broker/consumer?
+
+A. (From class) In a streaming + Medallion Architecture pipeline, the Bronze layer is never the producer, broker, or consumer - those are the streaming pipeline's plumbing. The Bronze layer is a downstream storage destination: the consumer receives and processes streamed data, then either writes it into an OLTP database (for immediate/fast access) or into the Bronze layer of a data lakehouse (for eventual long-term analytics). Bronze is an endpoint the data lands at after the consumer is already done with it - not part of the streaming architecture itself.
+
+---
 
 Q. What is Git Flow, and how does branching work in a team?
 
-A. (From class recording) On an individual project: initiate a git repo, commit your work locally, and optionally push to a remote repo (e.g. GitHub) so it's accessible from other devices - each commit creates a snapshot with a history of everything you worked on. In a team environment, this extends into a branching strategy with (typically) four branch types:
+A. (From class) On an individual project: initiate a git repo, commit your work locally, and optionally push to a remote repo (e.g. GitHub) so it's accessible from other devices - each commit creates a snapshot with a history of everything you worked on. In a team environment, this extends into a branching strategy with (typically) four branch types:
 
 | Branch | Purpose |
 |---|---|
@@ -969,17 +1087,23 @@ A. (From class recording) On an individual project: initiate a git repo, commit 
 | `feature` branches | Created from `develop` for a specific feature; merged back into `develop` via a pull request (PR) once approved |
 | `release` | Used for releasing the application/project |
 
-## CI/CD: The Three Environments, and Why CI/CD Was Invented
+See Training 3 for the full Git Flow and branching notes.
 
-A. (From class recording) Most data pipelines (and software generally) move through three environments: **Development** (where you do your work), **Testing/QA** (where code is validated before going further), and **Production** (where your actual users/systems consume it - once code is in production, developers shouldn't be touching it directly anymore). CI (continuous integration) covers things like linting, code-quality checks, and running tests when a PR is opened. CD (continuous deployment) is what actually gets validated code from GitHub into production with minimal disruption to users.
+---
+
+Q. What are the three environments, and why was CI/CD invented?
+
+A. (From class) Most data pipelines (and software generally) move through three environments: **Development** (where you do your work), **Testing/QA** (where code is validated before going further), and **Production** (where your actual users/systems consume it - once code is in production, developers shouldn't be touching it directly anymore). CI (continuous integration) covers things like linting, code-quality checks, and running tests when a PR is opened. CD (continuous deployment) is what actually gets validated code from GitHub into production with minimal disruption to users.
 
 Why CI/CD was invented: before it existed, deploying an update meant finding the time of day with the fewest active users, taking the whole system down, manually installing the new code, testing it, then bringing it back online - inconveniencing at least some users every time. CI/CD (which grew out of "extreme programming," an alternative to agile aimed at very frequent production deployments) solved this: push to `main`, the CI/CD pipeline runs, and the production server reloads the code without taking the system down - users may not even notice the update happened. A canary deployment (rolling out to a small subset of pods/servers before fully replacing the old version) is an optional extra safety layer on top of this, not a requirement of CI/CD itself.
 
-## What is "Big Data"? (The Actual Definition)
+Expanded (correction): Extreme Programming (XP) is not an alternative to agile - it is one of the agile methodologies, and its creators were among the authors of the Agile Manifesto (2001). Continuous integration came out of XP practices. See Training 4 for CI/CD in depth.
+
+---
 
 Q. When does data become "big data"?
 
-A. (From class recording) Data becomes big when it is too large to be efficiently processed by a single computer. Different people will give different definitions, but this is the practical one to use.
+A. (From class) Data becomes big when it is too large to be efficiently processed by a single computer. Different people will give different definitions, but this is the practical one to use.
 
 Expanded, with the scale examples Evan walked through:
 
@@ -992,9 +1116,11 @@ Expanded, with the scale examples Evan walked through:
 
 The key insight: "big data" isn't about a fixed size threshold - it's about the point where a single machine can no longer process the data efficiently, which is exactly why distributed systems, clusters, and tools like Spark exist. Most of what modern data engineering is about is figuring out what kind of system can process a given amount of data, and how to make that processing as efficient as possible - which is why so much of the discipline is really about infrastructure (computer hardware or cloud-based substitutes for it), not just "working with data."
 
-## The Three Major Ways Data Gets Used in an Organization
+---
 
-A. (From class recording) There are basically three major ways that data is used once a data engineer has made it available:
+Q. What are the three major ways data gets used in an organization?
+
+A. (From class) There are basically three major ways that data is used once a data engineer has made it available:
 
 | # | Use | Description | Data Engineer's role |
 |---|---|---|---|
@@ -1004,9 +1130,11 @@ A. (From class recording) There are basically three major ways that data is used
 
 Note on #3 - the "AI genie" example: suppose you run a website and want to ask an AI "what were our quarterly earnings for the past eight quarters?" A general-purpose LLM can't answer that because its training never saw that data. What you can do instead is feed your own data to the AI so it can answer questions grounded in that data - this is what a RAG (Retrieval-Augmented Generation) pipeline is for. LLMs can also be run locally/privately rather than communicating with a major provider, depending on an organization's needs.
 
-## How AI Has Changed the Data Space (and Where Agentic AI Fits)
+---
 
-A. (From class recording, in response to a student question about agentic AI) Before AI became mainstream (~2019, when Evan started), data scientists were mostly statisticians - they took data and applied statistical methods to produce maps/charts/presentations so management could make decisions. That was the main way data added value to a business.
+Q. How has AI changed the data space, and where does agentic AI fit?
+
+A. (From class, in response to a student question about agentic AI) Before AI became mainstream (~2019, when Evan started), data scientists were mostly statisticians - they took data and applied statistical methods to produce maps/charts/presentations so management could make decisions. That was the main way data added value to a business.
 
 Since AI, most of that "make charts and summaries" work can be done directly by an LLM. So a data scientist's output has shifted from "make the charts" toward "how do we use this data to train a model" and "how do we use this in a RAG pipeline" (making an LLM's knowledge include your organization's own data).
 
@@ -1015,4 +1143,3 @@ Agentic AI specifically (an AI agent performing tasks on a regular, autonomous b
 - Data engineering involves a lot of interconnected moving parts and judgment calls that current agentic AI isn't reliable enough to be trusted with unsupervised.
 
 Career implication Evan gave: data engineers are likely to be among the last technical disciplines AI fully replaces, precisely because of that complexity. The more effectively you learn to direct/prompt AI now (rather than being replaced by developers who can), the more valuable you remain - since AI in its current form is a prompt-and-response system that still needs a knowledgeable human to guide it well, even as it continues to automate more of what "average" development work looks like today.
-

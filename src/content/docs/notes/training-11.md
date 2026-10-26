@@ -7,9 +7,15 @@ sidebar:
 
 Teacher: Evan Flint
 
-Syllabus Day 12 (per file numbering) - actual coverage: continuing the Postgres -> Hive Scala Spark pipeline, now with the teacher's finished version - reads AND writes, using native Spark-Hive metastore integration (`enableHiveSupport()` + `hive.metastore.uris`) instead of the CSV/`LOAD DATA` bridge approach documented in `Training 8.md`/`hive-spark-etl-walkthrough.md`. Note: this continues the pacing drift already visible in `Training 6.md`-`Training 10.md`.
+Syllabus Day 12 (per file numbering) - actual coverage: continuing the Postgres -> Hive Scala Spark pipeline, now with the teacher's finished version - reads AND writes, using native Spark-Hive metastore integration (`enableHiveSupport()` + `hive.metastore.uris`) instead of the CSV/`LOAD DATA` bridge approach documented in `Training 8.md`/`Walkthrough - Training 8 (Hive and Spark ETL).md`. Note: this continues the pacing drift already visible in `Training 6.md`-`Training 10.md`. The roadmap's "Scala Advanced" topics (implicits, currying, closures, sealed traits, Futures) are covered in `Training 10.md`.
+
+---
 
 # The Teacher's Finished Postgres -> Hive Scala Job
+
+Q. How does a Spark job write Postgres tables straight into Hive, without a CSV bridge?
+
+A. Build the SparkSession with `enableHiveSupport()` and `hive.metastore.uris` pointing at the Hive metastore, read each table over JDBC, and call `.write.saveAsTable("db.table")`.
 
 ```scala
 import org.apache.spark.sql.{SparkSession, DataFrame}
@@ -88,11 +94,21 @@ Expanded: this is the direct resolution of the open question flagged back in `Tr
 | `hive.metastore.uris = thrift://localhost:9083` | Same, unchanged | We already exposed port `9083` on our `hive-server` container while investigating this exact question - genuine TCP connect confirmed, but not yet confirmed as a *working* metastore |
 | Table names (`bronze.sales`, `gold.dim_customer`, etc.) | Unchanged | These already match our own warehouse's real table names exactly |
 
-**Real risk worth flagging before running:** if `hive.metastore.uris` doesn't actually connect to a genuine, reachable metastore, Spark can fail *silently* rather than erroring - `enableHiveSupport()` without a working metastore connection can fall back to creating its own local embedded Derby metastore (a `metastore_db` folder in the current directory) and a local `spark-warehouse` folder, giving the *appearance* of success while never touching the real Hive tables at all. Worth explicitly checking the actual Hive tables (via `beeline`) after running this, not just trusting that the Scala program exited without an error.
+**Real risk worth flagging before running:** if `hive.metastore.uris` is **not set** (for example, a missing or unread `hive-site.xml`), `enableHiveSupport()` silently creates its own local embedded Derby metastore (a `metastore_db` folder in the current directory) and a local `spark-warehouse` folder. The job then "succeeds" while never touching the real Hive tables. If `hive.metastore.uris` **is** set but the metastore is unreachable, Spark does not fall back - it fails at the first catalog call, which is exactly what happened below (`Broken pipe` on the first `saveAsTable`). Either way, check the actual Hive tables (via `beeline`) after running, not just the program's exit code.
+
+**Version compatibility:** `spark.sql.hive.metastore.version` (here `3.1.3`) is the version of the metastore **client** Spark loads. It should be compatible with the metastore **server** you connect to (our container runs Hive 4.0.1). A mismatch is a common cause of Thrift errors such as `Invalid method name`; if you see one, set the client version to match the server, or the closest version Spark supports.
+
+**`mode("overwrite")` is a one-time migration, not an incremental load:** every re-run rewrites each table completely. That's fine for copying the warehouse once, but it's the opposite of what the incremental exercise needs (row count grows, no duplicates) - see "How do you make a Bronze -> Silver load incremental and idempotent?" below.
 
 ---
 
 ## Confirmed: native metastore integration does NOT work against our `hive-server` container
+
+Q. Why did the native Spark -> Hive write fail at first against our container, and what fixed it?
+
+A. Nothing was actually listening on port 9083 (the container ran only HiveServer2 on embedded Derby). It worked after adding a Postgres-backed standalone metastore service and a filesystem shared by Spark and the metastore.
+
+Expanded (lab log):
 
 Built `HiveSparkETL` (a new, separate Scala/sbt project - see `hive-spark-etl-scala/`) with the adapted version of the teacher's code above and actually ran it end-to-end. Result:
 
@@ -135,7 +151,83 @@ Re-ran `HiveSparkETL` end to end: **all 10 `saveAsTable` calls succeeded**, `[su
 
 ---
 
+Q. What are the components of a Hive metastore deployment?
+
+A. A metastore service, a backing relational database, and (separately) HiveServer2 for SQL clients.
+
+Expanded:
+
+| Component | Port / location | Role |
+|---|---|---|
+| Hive Metastore service (`hive --service metastore`) | Thrift, `9083` | Serves table/partition metadata to Spark, Hive, Trino, etc. This is what `hive.metastore.uris` points at |
+| Backing RDBMS (Postgres/MySQL; Derby only for testing) | e.g. `5432` | Stores the metadata itself (the `DBS`, `TBLS`, `SDS` tables). Created with `schematool -dbType postgres -initSchema` |
+| HiveServer2 | JDBC/Thrift `10000` (web UI `10002`) | Runs HiveQL for clients like `beeline`. Separate from the metastore - Spark doesn't need it |
+| Warehouse storage (HDFS/S3/shared disk) | `hive.metastore.warehouse.dir` | Where the table files actually live |
+
+---
+
+Q. Why does a managed table need a filesystem shared by Spark and the metastore?
+
+A. The metastore stores each table's location as a path string, and the metastore server creates the directories itself, so the path must mean the same physical place to both sides.
+
+Expanded: in our case Spark stored a Mac-only path as the database location, and the metastore server (in the container) failed to `mkdir` it on its own filesystem. Real deployments solve this with HDFS or S3, where `hdfs://...` or `s3://...` resolves identically everywhere; locally, a bind mount with the same absolute path on both sides did the same job.
+
+---
+
+Q. Why does embedded Derby allow only one process?
+
+A. Embedded Derby runs inside the JVM that opens it and takes an exclusive lock on the database files, so a second JVM (a second Hive process or a Spark session) can't open the same `metastore_db`.
+
+Expanded: that's why embedded Derby is only for single-user testing. Any setup where Spark and Hive (or two Spark apps) share metadata needs a metastore service backed by a real database such as Postgres.
+
+---
+
+Q. How do you verify a Spark write actually landed in Hive?
+
+A. Check from an independent client, not from the job's exit code.
+
+Expanded: connect with `beeline` to HiveServer2 and run `SHOW DATABASES`, `SHOW TABLES IN gold`, and `SELECT COUNT(*)` on the target table, and compare the count with the source. Also check `DESCRIBE FORMATTED <table>` for the expected `Location`. A `metastore_db` or `spark-warehouse` folder appearing in the job's working directory is a warning sign that Spark used its own local metastore.
+
+---
+
+Q. How do you make a Bronze -> Silver load incremental and idempotent?
+
+A. Only append rows that aren't already in Silver, identified by a business key, so re-running the job adds new rows and never duplicates old ones.
+
+Expanded: the pattern used in the Training 11 homework (key: `sale_id`):
+
+```scala
+val bronze   = spark.read.jdbc(JDBC_URL, "bronze.sales", jdbcProperties)
+val existing = spark.table("silver.sales").select("sale_id")
+
+val newRows = bronze
+  .dropDuplicates("sale_id")                  // no duplicates inside this batch
+  .join(existing, Seq("sale_id"), "left_anti") // keep only keys Silver doesn't have yet
+
+newRows.write.mode("append").saveAsTable("silver.sales")
+```
+
+| Approach | Incremental? | Problem |
+|---|---|---|
+| `overwrite` every run | No | Rewrites everything; if the source is a static copy, it also wipes out rows appended by earlier runs |
+| `overwrite` + `dropDuplicates` | No | No duplicates, but still a full rebuild every run - cost grows with total history |
+| `append` without a check | Yes | Re-running the job duplicates rows |
+| `left_anti` on key + `append` | Yes, idempotent | Needs a reliable unique key; the anti-join reads Silver's keys each run |
+| High-watermark filter (`WHERE updated_at > last_max`) + `append` | Yes | Cheaper on big tables; needs a reliable timestamp and a stored checkpoint. Use `MERGE` (Delta/Iceberg/Redshift) when rows can also change |
+
+Homework check: run `generate_sales.py`, run the Spark job - the Silver row count goes up by the new rows, and `SELECT sale_id, COUNT(*) ... GROUP BY sale_id HAVING COUNT(*) > 1` returns nothing.
+
+**Interview line:** "I make it idempotent by keying on a business ID: I dedupe the batch, left-anti-join it against what's already in the target, and append only the new keys - or use a high-watermark or a MERGE for large or changing data - so re-running the same batch never creates duplicates."
+
+---
+
 ## New teacher script: `generate_sales.py`
+
+Q. What does `generate_sales.py` do, and how does it feed the incremental exercise?
+
+A. It inserts a small batch of new synthetic sales rows into Postgres `bronze.sales` each time it runs, continuing the ID sequence, so the Spark job has genuinely new rows to load incrementally.
+
+Expanded: summary - (1) connects to Postgres, (2) finds the current `MAX` transaction ID, (3) generates 5 valid rows with the next IDs, (4) inserts them, (5) prints what it inserted. One caveat: `MAX(id) + 1` is not safe if two writers run at the same time (both read the same max and insert the same IDs). In production, use a database sequence/identity column or a UUID instead. (The homework adapted it to our real `bronze.sales` schema - see the homework answers.)
 
 Not covered in any earlier training session - the teacher shared this as a standalone Python script for generating synthetic Bronze-layer sales transactions directly into Postgres, rather than a one-time bulk load. It looks up the highest existing `T###` transaction ID already in `bronze.sales`, then inserts a new batch of 5 rows continuing that sequence - i.e., meant to be re-run repeatedly to simulate an ongoing stream of new transactions landing in the Bronze layer.
 

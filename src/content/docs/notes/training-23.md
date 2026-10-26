@@ -9,6 +9,30 @@ Teacher: Evan Flint
 
 Syllabus Day 24 (per file numbering; Tue Oct 13). Topics: homework review (delivery guarantees), then Evan jumped ahead in the syllabus to **Terraform / Infrastructure as Code**, then **AWS Step Functions**. More filled in as class goes.
 
+Roadmap Day 24 topics live elsewhere: Redshift design/optimization (Training 18 and 21), Kinesis (Training 22), RDS/Aurora patterns (Training 18 and 22). Terraform continues in Training 24 (import, state) and Training 25 (fundamentals); Airflow is in Training 26.
+
+---
+
+# Homework Review: Delivery Guarantees
+
+Q. What are the three delivery guarantees, and which one does our Kinesis → Glue → Aurora pipeline have?
+
+A. (Topic of the homework review; the class discussion itself wasn't captured.) At-most-once, at-least-once and exactly-once describe how many times each message can reach the sink if something fails.
+
+Expanded:
+
+| Guarantee | What can happen on failure | How you get it | Cost |
+|---|---|---|---|
+| **At-most-once** | Messages can be **lost**, never duplicated | Commit the offset/checkpoint *before* processing | Cheapest, but data loss |
+| **At-least-once** | Nothing lost, but messages can be **duplicated** | Commit the checkpoint *after* the write succeeds; replay on failure | The usual default |
+| **Exactly-once** | Each message affects the result once | Transactions (Kafka EOS), or at-least-once + an **idempotent sink** | Most complex |
+
+Applied to the Training 22 streaming demo:
+- Kinesis keeps records for the retention period, and the Glue streaming job checkpoints its position **after** writing a micro-batch. If it crashes mid-batch, it re-reads from the last checkpoint, so delivery is **at-least-once**.
+- The Aurora sink upserts on the key `(station_id, snapshot_ts)` (`INSERT … ON CONFLICT`). A replayed record overwrites itself instead of adding a row, so the *result* is **effectively exactly-once**.
+
+**Interview line:** "Most streaming pipelines are at-least-once end to end. I make them effectively exactly-once by making the sink idempotent: upsert or MERGE on a natural key, so a replayed message can't create a duplicate."
+
 ---
 
 # Infrastructure as Code (Terraform)
@@ -35,6 +59,8 @@ Evan is only teaching the basics, because we're data engineers, not DevOps engin
 | **Console (ClickOps)** | Click through web forms | No, you redo it by hand | No |
 | **AWS CLI / scripts** | One command per resource | Partly; a rerun can fail or duplicate | Only the script |
 | **Terraform (IaC)** | Declare the end state in `.tf` files, then `plan` + `apply` | Yes, the same file gives the same result | Yes, the code plus Terraform's state file |
+
+**Interview line (why IaC?):** "Infrastructure as code makes environments repeatable and reviewable. The same files build dev and prod, changes go through pull requests and `terraform plan` before anything is touched, the code documents what exists, and drift from manual changes shows up in the next plan." For Terraform state, modules and variables, see Training 25; for importing existing resources, see Training 24.
 
 Evan also mentioned that vendors like Informatica, Pentaho, Talend and Palantir tried to sell one all-in-one pipeline platform. They're expensive to even learn, so they never really took off. Real pipelines are many services stitched together, which is exactly what Terraform describes.
 
@@ -151,9 +177,9 @@ Evan tied orchestration back to **cron**, which we covered earlier: cron is a *f
 | Hour | 0–23 | `5` = 5 AM |
 | Day of month | 1–31 | `*` = any |
 | Month | 1–12 | `*` = any |
-| Day of week | 0–6 (0 = Sunday) | `1` = Monday → "5:00 AM every Monday" |
+| Day of week | 0–7 (0 and 7 both = Sunday) | `1` = Monday → "5:00 AM every Monday" |
 
-Note: `*/5` in the first field means every 5 **minutes**, not seconds. Standard cron's smallest unit is one minute.
+Note: `*/5` in the first field means every 5 **minutes**, not seconds. Standard cron's smallest unit is one minute. Full cron notes: Training 1. Airflow uses the same syntax for `schedule`: see the Apache Airflow section in Training 26.
 
 | What an orchestrator handles | Example in our Citi Bike pipeline |
 |---|---|
@@ -170,7 +196,9 @@ Q. What is AWS Step Functions?
 
 A. (Teacher's definition) Step Functions
 
-Expanded: Step Functions is AWS's serverless **workflow orchestrator**. You define a **state machine**, a diagram of steps such as "run this Glue job, then this Lambda, if it fails retry or alert, run these in parallel". AWS then runs it, tracking each step's success or failure. It's AWS's managed counterpart to an Airflow DAG: it decides *what runs when and in what order*, while services like Lambda, Glue and Redshift do the work. Workflows are written in the **Amazon States Language** (JSON) or drawn in the visual Workflow Studio. (More to come as class covers it.)
+Expanded: **One-line answer:** AWS's serverless workflow orchestrator. You define a state machine of steps, and AWS runs it with retries, branching and error handling.
+
+Step Functions is AWS's serverless **workflow orchestrator**. You define a **state machine**, a diagram of steps such as "run this Glue job, then this Lambda, if it fails retry or alert, run these in parallel". AWS then runs it, tracking each step's success or failure. It's AWS's managed counterpart to an Airflow DAG: it decides *what runs when and in what order*, while services like Lambda, Glue and Redshift do the work. Workflows are written in the **Amazon States Language** (JSON) or drawn in the visual Workflow Studio. Training 24 shows the real Citi Bike state machine built in class.
 
 | Concept | Meaning |
 |---|---|
@@ -178,6 +206,68 @@ Expanded: Step Functions is AWS's serverless **workflow orchestrator**. You defi
 | **State** | One step: Task (call a service), Choice (branch), Parallel, Map (loop over items), Wait, Pass, Succeed/Fail |
 | **Retry / Catch** | Built-in error handling per step |
 | **Standard vs Express** | Standard: long-running (up to a year), exactly-once steps, priced per state transition. Express: short (≤ 5 min), high volume, priced per request and duration |
+
+| | Standard workflow | Express workflow |
+|---|---|---|
+| Max duration | 1 year | 5 minutes |
+| Execution semantics | **Exactly-once** | **At-least-once** (asynchronous) or **at-most-once** (synchronous) |
+| What that means for your steps | A step won't run twice unless your `Retry` says so | A step can run twice, so steps must be **idempotent** |
+| Pricing | Per state transition | Per request + duration/memory |
+| Execution history | Kept in the console (90 days) | Sent to CloudWatch Logs |
+| Typical use | Batch ETL pipelines, human approval, long Glue jobs | High-volume event processing (IoT, streaming) |
+
+**Interview line:** "Standard is for long-running, exactly-once workflows like a nightly ETL. Express is for short, high-volume event processing; it's at-least-once, so every step has to be idempotent."
+
+---
+
+Q. What does a Step Functions definition look like?
+
+A. (Not shown in class; standard Amazon States Language.) A JSON document with a `StartAt` state and a `States` map. Each Task state names a service integration, and can have `Retry` and `Catch` blocks.
+
+Expanded: a minimal version of "run a Glue job, retry on failure, alert if it still fails":
+
+```json
+{
+  "StartAt": "BronzeToSilver",
+  "States": {
+    "BronzeToSilver": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": { "JobName": "CitiBikeBronzeToSilver" },
+      "Retry": [{
+        "ErrorEquals": ["States.ALL"],
+        "IntervalSeconds": 60,
+        "MaxAttempts": 2,
+        "BackoffRate": 2.0
+      }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "NotifyFailure" }],
+      "Next": "Done"
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": { "TopicArn": "<sns-topic-arn>", "Message": "Glue job failed" },
+      "Next": "Failed"
+    },
+    "Failed": { "Type": "Fail" },
+    "Done": { "Type": "Succeed" }
+  }
+}
+```
+
+| Piece | Meaning |
+|---|---|
+| `.sync` on the Resource | Wait until the Glue job **finishes** before moving on (not just until it starts) |
+| `Retry` | Try again on matching errors: 60 s, then 120 s (`BackoffRate` 2.0), up to 2 more attempts |
+| `Catch` | After retries are used up, go to another state instead of failing silently |
+
+| Service integration pattern | Resource suffix | Step Functions waits for |
+|---|---|---|
+| Request-Response | none (e.g. `glue:startJobRun`) | Only the API call to return. The job may still be running |
+| Run a Job | `.sync` | The job to complete (Glue, EMR, ECS, Batch, another state machine) |
+| Wait for callback | `.waitForTaskToken` | Someone to call `SendTaskSuccess` / `SendTaskFailure` with the token (human approval, external systems) |
+
+**Interview line (Step Functions vs Airflow):** see the comparison table in Training 26. Short version: Step Functions is serverless and AWS-native with JSON state machines; Airflow is Python DAGs, cloud-neutral, with scheduling, backfill and a huge operator library.
 
 ---
 
@@ -187,7 +277,9 @@ Q. What is a serverless application?
 
 A. (Teacher's definition) Serverless applications
 
-Expanded: "Serverless" doesn't mean there are no servers. It means **you don't manage them**. AWS provisions, patches and scales the machines, and you pay for what you use, often per request or per second, instead of for a machine that's always on. A serverless application is built entirely from these managed pieces, and many of them are already in our Citi Bike pipeline. (More to come as Evan covers it.)
+Expanded: **One-line answer:** an application built from managed services where the cloud provider runs, patches and scales the servers, and you pay per use instead of for always-on machines.
+
+"Serverless" doesn't mean there are no servers. It means **you don't manage them**. AWS provisions, patches and scales the machines, and you pay for what you use, often per request or per second, instead of for a machine that's always on. A serverless application is built entirely from these managed pieces, and many of them are already in our Citi Bike pipeline.
 
 | Serverless service | Role | We've used it as |
 |---|---|---|

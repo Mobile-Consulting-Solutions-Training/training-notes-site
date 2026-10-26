@@ -66,7 +66,7 @@ FORMAT AS PARQUET;
 
 Q. What is EMR Serverless?
 
-A. (Expanded; no teacher's definition yet) EMR Serverless runs Spark (or Hive) jobs **without creating a cluster**. You submit a job, AWS spins up the compute it needs, runs the job, and releases it. You pay only for the vCPU, memory and storage used **while the job runs**.
+A. EMR Serverless runs Spark (or Hive) jobs **without creating a cluster**. You submit a job, AWS spins up the compute it needs, runs the job, and releases it. You pay only for the vCPU, memory and storage used **while the job runs**.
 
 **Expanded:** It's the answer to the EMR problem from Training 18: a regular EMR cluster is built from EC2 instances and bills the whole time it's on, even when idle. EMR Serverless keeps EMR's open-source Spark (your normal `spark-submit`-style PySpark script, no Glue-specific code) but bills like Glue, only while working. That's why it fits a batch pipeline where data arrives once a night.
 
@@ -102,6 +102,15 @@ clean = (df.dropDuplicates(["sale_id"])
            .withColumn("sale_date", F.to_date("sale_date")))
 clean.write.mode("overwrite").partitionBy("sale_date").parquet(dst)
 ```
+
+**Gotcha (static vs dynamic partition overwrite):** with Spark's default `partitionOverwriteMode=static`, `mode("overwrite")` plus `partitionBy` deletes **every** existing partition under `dst`, not just the dates in today's data. For a nightly incremental job that would wipe history. Set dynamic mode so only the partitions present in the new DataFrame are replaced:
+
+```python
+spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
+clean.write.mode("overwrite").partitionBy("sale_date").parquet(dst)   # replaces only today's sale_date folders
+```
+
+**Interview line:** "Static overwrite replaces the whole table path; dynamic overwrite replaces only the partitions in the new data. For incremental partitioned loads I set `partitionOverwriteMode` to dynamic so a rerun is idempotent without wiping older partitions."
 
 | | EMR on EC2 (cluster) | **EMR Serverless** | Glue |
 |---|---|---|---|
@@ -277,7 +286,7 @@ A. (Teacher's definition) ECS: Elastic Container Service. The containers that it
 
 **Expanded:** ECS is AWS's managed service for **running Docker containers**. You tell it *which* container image to run, *how much* CPU/memory it gets and *how many copies* to keep running. ECS then starts them, restarts any that crash, spreads them across machines and connects them to a load balancer. It's the AWS equivalent of running `docker run` / `docker compose up` yourself, but at production scale and self-healing.
 
-**Containers refresher (from using Docker in class):** a container packages an app **plus everything it needs** (Python version, libraries, config) into one image, so it runs the same on a laptop, a server or AWS. "It works on my machine" stops being a problem. An EC2 instance is a whole virtual computer; a container is a much lighter, isolated process that shares the host's operating system.
+**Containers refresher (from using Docker in class; the venv vs container vs VM comparison is in `Training 14.md`):** a container packages an app **plus everything it needs** (Python version, libraries, config) into one image, so it runs the same on a laptop, a server or AWS. "It works on my machine" stops being a problem. An EC2 instance is a whole virtual computer; a container is a much lighter, isolated process that shares the host's operating system.
 
 | | EC2 instance (VM) | Container (on ECS) |
 |---|---|---|
@@ -488,5 +497,44 @@ s3 = boto3.client("s3")   # picks up the Lambda/ECS role's temporary credentials
 | Permission needed | Whatever the profile's user has | A least-privilege policy: `s3:PutObject` on `arn:aws:s3:::citi-bike-nyc/bronze/citibike/*` |
 
 **Size check:** at 4 files per run, every 5 minutes is about 1,150 files a day. That's fine for S3, but lots of small files slow Spark down. That's a reason the nightly Spark job **compacts** them into a few larger Parquet files in Silver.
+
+---
+
+Q. How is the ingestion Lambda packaged and scheduled?
+
+A. The script becomes a Lambda handler, `boto3` comes with the Python runtime, and an **EventBridge Scheduler** schedule invokes it on a rate or cron expression.
+
+**Expanded:**
+
+| Setting | Typical value for this job | Why |
+|---|---|---|
+| Handler | `lambda_function.lambda_handler` (wraps `main()`) | Lambda calls this function with `(event, context)` |
+| Runtime | Python 3.x | `boto3` is already included, so this script needs no extra packages |
+| Extra libraries (e.g. `requests`, `pandas`) | A **Lambda layer** or a zip/container image | Anything outside the standard library and `boto3` must be shipped with the function |
+| Timeout | 30-60 seconds (default is 3 s, max 15 min) | Downloading four feeds can exceed the 3-second default |
+| Memory | 128-256 MB | CPU scales with memory; this job is small |
+| Execution role | `s3:PutObject` on the Bronze prefix + CloudWatch Logs | Least privilege; no keys in code |
+
+```bash
+aws scheduler create-schedule \
+  --name citi-bike-ingestion-5-min \
+  --schedule-expression "rate(5 minutes)" \
+  --flexible-time-window '{"Mode": "OFF"}' \
+  --target '{"Arn": "<lambda-function-arn>", "RoleArn": "<scheduler-role-arn>"}'
+```
+
+Cron form: `cron(0/5 * * * ? *)` (EventBridge cron has six fields, including year, and uses `?` for "no specific value" in day-of-month or day-of-week). Schedules can also have a start and end time, which caused the "data stopped" issue in Training 20.
+
+---
+
+Q. How do you avoid the small-files problem from 5-minute ingestion?
+
+A. Land small raw files in Bronze, then compact them into fewer large files (roughly 128 MB-1 GB) in the Silver job.
+
+**Expanded:** Each small file costs an S3 request, a file-listing entry and a Spark task, so thousands of KB-sized files make jobs slow and Athena queries expensive. Options: compact in the nightly Spark job (`coalesce`/`repartition` before writing Parquet), buffer before writing (Kinesis Firehose buffers by size or time), or use a table format with compaction (`OPTIMIZE` in Delta Lake, `rewrite_data_files` in Iceberg).
+
+**Interview line:** "I keep raw small files in Bronze for lineage, and the Silver job compacts them into a few large Parquet files per partition. With Delta or Iceberg I'd schedule compaction instead."
+
+The full build of this ingestion step in your own account, including the errors hit, is in [Walkthrough - Training 19: Citi Bike Pipeline](/training-notes-site/walkthroughs/training-19-citi-bike-pipeline/).
 
 ---

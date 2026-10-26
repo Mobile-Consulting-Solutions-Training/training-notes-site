@@ -15,23 +15,66 @@ Teacher's definition: "OTF and schema-driven formats:"
 
 ## Kafka Limitations
 
-Teacher's definition: "Kafka limitations - message size limitation, maximum size of a message is 1MB."
+Q. What is Kafka's message size limitation?
 
-Expanded: this is a size ceiling on a single Kafka record (the default `message.max.bytes`/`max.request.size` configuration), not on a topic's overall volume - Kafka happily handles unlimited total throughput/retention, but any one message has to fit under that 1MB default. This is worth having in mind as a motivation for today's OTF/schema-driven formats topic: Kafka (see `Training 12.md`) is built for a continuous stream of many small events, not for shipping large structured datasets whole - a single Parquet/Delta/Iceberg file, or even one Avro/Protobuf-encoded batch, can easily exceed 1MB, so bulk structured data generally moves via files in an object store (or a table format like Delta/Iceberg sitting on top of one) rather than being crammed through Kafka message-by-message.
+A. (Teacher's definition) "Kafka limitations - message size limitation, maximum size of a message is 1MB."
 
-## Delta
+Expanded: 1 MB is the **default** limit, not a hard maximum (`message.max.bytes` on the broker, `max.request.size` on the producer, `max.message.bytes` per topic); it can be raised, but large messages hurt throughput and memory. It is a size ceiling on a single Kafka record (the default `message.max.bytes`/`max.request.size` configuration), not on a topic's overall volume - Kafka happily handles unlimited total throughput/retention, but any one message has to fit under that 1MB default. This is worth having in mind as a motivation for today's OTF/schema-driven formats topic: Kafka (see `Training 12.md`) is built for a continuous stream of many small events, not for shipping large structured datasets whole - a single Parquet/Delta/Iceberg file, or even one Avro/Protobuf-encoded batch, can easily exceed 1MB, so bulk structured data generally moves via files in an object store (or a table format like Delta/Iceberg sitting on top of one) rather than being crammed through Kafka message-by-message.
 
-## Iceberg
+The standard pattern for large payloads is the **claim-check pattern**: write the large object to S3 (or other object storage) and send only a small Kafka message containing a pointer to it (bucket/key plus metadata).
 
-Teacher's definition: "Similar to SQL tables or DataFrames - they are structured data formats" (applies to both Delta and Iceberg).
+---
+
+## Delta and Iceberg
+
+Q. What are Delta Lake and Apache Iceberg?
+
+A. (Teacher's definition) "Similar to SQL tables or DataFrames - they are structured data formats" (applies to both Delta and Iceberg).
+
+Expanded: both are **open table formats (OTF)**: ordinary Parquet data files in object storage plus a **transaction log / metadata layer** that records which files make up each version of the table. That log is what turns a folder of files into a real table:
+
+| Feature | What the log makes possible |
+|---|---|
+| ACID transactions | Writers commit atomically; readers never see half-written data |
+| Time travel | Query or roll back to an earlier version or timestamp |
+| Schema enforcement / evolution | Reject bad writes, or add columns safely |
+| MERGE / UPDATE / DELETE | Row-level changes on files that are otherwise immutable |
+
+| | Delta Lake | Apache Iceberg |
+|---|---|---|
+| Origin | Databricks, now open source (Linux Foundation, Apache 2.0) | Netflix, now an Apache project |
+| Metadata | `_delta_log/` JSON commits + Parquet checkpoints | Metadata files → manifest lists → manifests |
+| Strongest on | Databricks / Spark | Multi-engine (Spark, Flink, Trino, Snowflake, Athena) |
+
+Delta Lake operations (MERGE, OPTIMIZE, Z-ORDER, VACUUM) are covered with Databricks in `Training 29.md`.
+
+---
 
 ## Avro
 
-Teacher's definition: "Similar to JSON format - it's a semistructured format."
+Q. What is Avro?
+
+A. (Teacher's definition) "Similar to JSON format - it's a semistructured format."
+
+Expanded (correction): Avro is a **binary, row-based, schema-defined (structured)** format. Only its **schema** is written in JSON; the data itself is compact binary, not JSON and not semi-structured. The schema travels with the file (or sits in a Schema Registry for Kafka), which is what makes Avro good at **schema evolution**. Fuller entry: `Training 6.md` (file formats).
+
+---
 
 ## Protobuf
 
-Teacher's definition: "It's own thing entirely."
+Q. What is Protobuf, and how does it compare with Avro and JSON?
+
+A. (Teacher's definition) "It's own thing entirely."
+
+Expanded: Protocol Buffers (Google) is a binary serialization format whose schema is defined in a `.proto` file and compiled into code for each language.
+
+| | JSON | Avro | Protobuf |
+|---|---|---|---|
+| Encoding | Text | Binary | Binary |
+| Schema | None (self-describing field names) | JSON schema, stored with the data or in a Schema Registry | `.proto` file, compiled into generated classes |
+| Size / speed | Largest, slowest | Compact | Compact, very fast |
+| Schema evolution | Unmanaged | Strong (defaults, reader/writer schemas) | Strong (numbered fields; don't reuse numbers) |
+| Typical use | REST APIs, logs, quick prototypes | Kafka + Schema Registry, data lakes | gRPC services, Kafka |
 
 ---
 
@@ -39,7 +82,9 @@ Teacher's definition: "It's own thing entirely."
 
 ## Types of NoSQL Database
 
-Teacher's definition: "Types of NoSQL Database:"
+Q. What are the types of NoSQL database?
+
+A. (Teacher's definition) "Types of NoSQL Database:"
 
 | Type | Examples |
 |---|---|
@@ -49,9 +94,36 @@ Teacher's definition: "Types of NoSQL Database:"
 
 Teacher's note: "AWS DocumentDB is also a Document type database."
 
+Expanded (correction): **DynamoDB is not a column-family database**; it is a **key-value / document** store (partition key + optional sort key). The list is also missing the **key-value** category. The standard four:
+
+| Type | Data model | Examples | Good for |
+|---|---|---|---|
+| Key-value | A key maps to a value (opaque or a small item) | Redis, DynamoDB | Caching, sessions, lookups by key |
+| Document | JSON/BSON documents with nested fields | MongoDB, DocumentDB, Cosmos DB (DynamoDB also stores documents) | Flexible-schema app data, catalogs |
+| Wide-column / column-family | Rows with many dynamic columns grouped into families, partitioned by key | Cassandra, HBase, Bigtable | Very high write volume, time-series, IoT |
+| Graph | Nodes and edges | Neo4j, Neptune | Relationships: social, fraud, recommendations |
+
+Time-series (InfluxDB, Timestream) and vector stores (Pinecone, pgvector) are often listed as extra categories. The MongoDB document model continues in `Training 14.md`.
+
+**Interview line:** "There are four main NoSQL types: key-value like Redis and DynamoDB, document like MongoDB, wide-column like Cassandra, and graph like Neo4j. I choose based on the access pattern, not on the data alone."
+
+---
+
 ## GSI (Global Secondary Index)
 
-Teacher's definition: "GSI - Global Secondary Index (in DynamoDB)."
+Q. What is a GSI in DynamoDB?
+
+A. (Teacher's definition) "GSI - Global Secondary Index (in DynamoDB)."
+
+Expanded: a DynamoDB table can only be queried efficiently by its **primary key** (partition key, plus an optional sort key). A **GSI** adds another way in: a copy of selected attributes organized under a *different* partition key and sort key, so you can query by, say, `customer_email` instead of `order_id`.
+
+| | GSI (Global Secondary Index) | LSI (Local Secondary Index) |
+|---|---|---|
+| Keys | Different partition key and sort key | **Same** partition key, different sort key |
+| When created | Any time | Only at table creation |
+| Consistency | Eventually consistent only | Strong or eventual |
+| Throughput | Its own capacity, separate from the table | Shares the table's capacity |
+| Limit | Up to 20 per table (default) | Up to 5 per table |
 
 ---
 
@@ -80,6 +152,8 @@ Open-Meteo API ─► producer.py ─► Kafka (topic "weather", key = city)
 
 ## Kafka Message Keys
 
+Q. What is a Kafka message key, and how do you choose one?
+
 Expanded: a **message key** is an optional value attached to each Kafka record alongside the **value** (the payload). Kafka's producer hashes the key to pick a partition, so **every record with the same key goes to the same partition**. Kafka only guarantees order **within a partition**, so the key is how you get ordering for one entity (one vehicle, one customer, one city).
 
 ```text
@@ -100,6 +174,8 @@ P2: vehicle_123 → vehicle_123 → vehicle_123      ← same key always lands t
 - **Log compaction:** a compacted topic keeps only the **latest value per key**, which is useful for "current state" topics (latest customer status, latest device configuration).
 - **Choosing a key is an architecture decision.** Ask: *which events need to be processed together or in order?* For example `device_id` for IoT, `order_id` for orders, `account_id` for banking, `user_id` or `video_id` for streaming video, depending on the use case.
 - **Hot partitions:** if one key produces a huge share of traffic, its partition gets overloaded even if the topic has 50 partitions. Consider how evenly the key's values are spread (**cardinality and distribution**), not just "pick the ID."
+
+**Interview line (choosing a partition key):** "I pick the key from the ordering requirement: whatever entity's events must stay in order, like `order_id` or `device_id`, becomes the key. Then I check its cardinality and skew, because one very hot key overloads a single partition no matter how many partitions the topic has."
 
 Sending a key in Python (`kafka-python`):
 
@@ -123,7 +199,9 @@ df.selectExpr("CAST(key AS STRING) AS kafka_key", "CAST(value AS STRING) AS valu
 
 ## Spark Structured Streaming vs. Flink
 
-Expanded: Spark Structured Streaming is **micro-batch by default**: it collects the events that arrived during a time window and processes them together. Flink is a **record-at-a-time** engine: each event flows through the operators without waiting for a batch boundary. Flink is not literally instant (networking, buffering and serialization still add latency); it just never waits for a batch.
+Q. How does Spark Structured Streaming differ from Flink?
+
+Expanded: (this is the canonical Spark vs Flink comparison in the notes; the measured-latency lab is in `Training 14.md`) Spark Structured Streaming is **micro-batch by default**: it collects the events that arrived during a time window and processes them together. Flink is a **record-at-a-time** engine: each event flows through the operators without waiting for a batch boundary. Flink is not literally instant (networking, buffering and serialization still add latency); it just never waits for a batch.
 
 | | Spark Structured Streaming | Flink |
 |---|---|---|
@@ -156,6 +234,8 @@ docker exec -it mongodb mongosh        # open the Mongo shell inside the contain
 
 The database and collection don't need to be created first; MongoDB creates them on the first write.
 
+Q. What does `foreachBatch()` do in Structured Streaming?
+
 **`foreachBatch()`:** Spark hands each micro-batch to a Python function as a normal DataFrame, which is then written with the MongoDB connector. This makes the micro-batches visible ("Writing batch 0 to MongoDB", "Writing batch 1…"), and in `mongosh`, `countDocuments()` jumps in chunks every 5 seconds.
 
 ```python
@@ -187,7 +267,17 @@ spark-submit \
 
 A running server does not mean Spark can reach it. `Failed to find data source: mongodb` means the **connector** is missing, not the server.
 
-**Processing layer vs. serving layer:** Spark *processes* the stream and MongoDB *serves* the results. The dashboard reads MongoDB, never Kafka or Spark directly; reading Kafka straight from the dashboard would bypass the processing layer.
+---
+
+Q. What is the difference between the processing layer and the serving layer?
+
+Expanded: Spark *processes* the stream and MongoDB *serves* the results. The dashboard reads MongoDB, never Kafka or Spark directly; reading Kafka straight from the dashboard would bypass the processing layer.
+
+| Layer | Job | In the class pipeline | Optimized for |
+|---|---|---|---|
+| Ingestion / transport | Move events durably | Kafka | Throughput, replay |
+| Processing | Parse, clean, enrich, aggregate | Spark Structured Streaming | Transformations at scale |
+| Serving | Answer queries from apps and dashboards | MongoDB (indexed) | Low-latency reads |
 
 ---
 
@@ -205,6 +295,8 @@ db.weather.find({}, { _id: 0, city: 1, temperature: 1, processed_at: 1 }).limit(
 ---
 
 ## MongoDB Indexing
+
+Q. How do MongoDB indexes work, and how do you check whether a query uses one?
 
 | Command | Purpose |
 |---|---|
@@ -297,6 +389,45 @@ The reading Evan had ChatGPT write alongside the "add `joke_length`" homework (s
 | **Delivery semantics** | **At-most-once** (may lose, no duplicates), **at-least-once** (no loss, possible duplicates), **exactly-once** (the effect happens once; needs coordination of producers, offsets, transactions and sinks) |
 | **Consumer lag** | Latest offset minus the consumer's position. Growing lag is a key operational warning: check traffic, consumer speed, partition count, downstream slowness |
 
+**Interview line (consumer lag):** "Consumer lag is how far a consumer group is behind the newest offset. If it keeps growing, consumers are slower than producers: I check for a slow sink or a slow processing step first, then scale out by adding consumers, up to the partition count, adding partitions if needed."
+
 **Production example: car factory IoT.** Sensors (temperature, vibration, RPM…) → edge gateway on the factory floor (safety decisions stay local, in milliseconds) → secure WAN → Kafka in the cloud or data center (topics `machine-telemetry`, `robot-events`, `factory-alerts`, key = `machine_id`) → Spark or Flink → an alerting system for operators **and** a data lake for historical analytics and ML. Several independent consumers read the same topics.
 
 **Production example: Netflix-style video.** Video bytes travel over nearby **CDNs**, *not* Kafka. Kafka carries **events about** viewing (play, pause, buffering, search), ingested **per region** (US, EU, South America, Asia). Consumers include operations (buffering spike alerts, in seconds), recommendations/ML (user-interest signals), business analytics (hours watched, plays per title → warehouse) and security. Kafka is the central event backbone, and producers don't need to know who consumes the events.
+
+---
+
+# Kafka Reliability (interview core)
+
+(Not covered in class; roadmap topic for this day.)
+
+Q. How do you make a Kafka producer and consumer reliable?
+
+Expanded:
+
+| Setting / feature | What it does |
+|---|---|
+| `acks=all` | The write is acknowledged only after all in-sync replicas have it (see `Training 12.md`, Kafka internals) |
+| `retries` + `delivery.timeout.ms` | The producer resends on transient errors instead of dropping the record |
+| `enable.idempotence=true` | The broker de-duplicates producer retries (producer ID + sequence numbers), so a retry never writes a duplicate. Default since Kafka 3.0 |
+| Transactions (`transactional.id`) | Write to several partitions and commit consumer offsets atomically: the basis of Kafka exactly-once (read-process-write) |
+| Auto offset commit | Offsets are committed on a timer; a crash can skip records (at-most-once) or re-read them |
+| Manual commit after processing | Commit only once the record is safely written: **at-least-once** (possible duplicates, no loss) |
+
+---
+
+Q. What is a Schema Registry?
+
+Expanded: a service (Confluent Schema Registry, AWS Glue Schema Registry) that stores versioned Avro/Protobuf/JSON schemas for each topic. Producers send a small schema ID with each message instead of the whole schema, and the registry rejects schema changes that would break consumers.
+
+| Compatibility mode | Rule | Safe change example |
+|---|---|---|
+| BACKWARD (default) | New consumers can read old data | Delete a field, add an optional field with a default |
+| FORWARD | Old consumers can read new data | Add a field, delete an optional field |
+| FULL | Both directions | Add or remove fields that have defaults |
+
+---
+
+Q. How do you get exactly-once results from Kafka into a sink with Spark?
+
+**Interview line:** "Kafka is a replayable source and Spark's checkpoint stores the offsets, so after a failure the same micro-batch is replayed. To make that exactly-once end to end, the sink has to be idempotent or transactional: for example `foreachBatch` with a MERGE on a unique key, or a Delta or file sink, which Spark commits once per batch ID."
