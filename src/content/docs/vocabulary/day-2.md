@@ -2,7 +2,7 @@
 title: Day 2 Vocabulary
 description: Glossary of terms and definitions from the Training 2 study guide.
 sidebar:
-  order: 21
+  order: 2
 ---
 
 Vocabulary — Study Guide Day 2

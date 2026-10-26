@@ -2,7 +2,7 @@
 title: Day 0 Vocabulary
 description: Glossary of terms and definitions from the Training 0 study guide.
 sidebar:
-  order: 1
+  order: 0
 ---
 
 Vocabulary — Study Guide Day 0
