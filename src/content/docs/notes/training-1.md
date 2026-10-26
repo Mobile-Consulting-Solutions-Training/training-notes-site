@@ -27,17 +27,23 @@ A. (Teacher's definition) Unix was developed at Bell Labs. Early Unix operating 
 
 Expanded: Unix originated in 1969 at Bell Labs (AT&T's research division), created by Ken Thompson, Dennis Ritchie, and others. It introduced foundational ideas still used today - a hierarchical filesystem, the "everything is a file" philosophy, small composable command-line tools piped together, and multi-user/multi-tasking support. Linux (created later by Linus Torvalds in 1991) is a separate, independently-written operating system kernel built to be Unix-like/POSIX-compliant - it's not Unix code itself, but follows the same design philosophy and command conventions. This lineage is why Linux still uses Unix-style commands, permissions, and filesystem structure today.
 
+---
+
 Q. What was the issue with Unix?
 
 A. (Teacher's definition) Many found it useful, but it was proprietary.
 
 Expanded: Unix was owned by AT&T and licensed commercially - different vendors (Sun's SunOS/Solaris, IBM's AIX, HP-UX, etc.) each built their own paid, closed-source Unix variants. This meant no one could freely use, inspect, or modify the source code, which fragmented the ecosystem and blocked wide, free adoption. This gap is exactly what motivated the creation of free/open alternatives - the GNU Project (Richard Stallman, 1983) aimed to build a free Unix-compatible operating system, and Linux (Linus Torvalds, 1991) provided the missing free kernel that, combined with GNU's tools, created a fully free and open Unix-like OS. This is why it's often called "GNU/Linux."
 
+---
+
 Q. Who created the Linux Kernel?
 
 A. (Teacher's definition) The Linux Kernel was created by Linus Torvalds. But this was just the kernel - it wasn't an operating system that would be considered useful by a non-expert.
 
 Expanded: Linus Torvalds created the Linux kernel in 1991 as a free, open-source, Unix-like alternative, released under the GPL license. Note the distinction: Linux itself is just the kernel (the core piece that manages hardware, memory, processes, and the filesystem) - what people call "Linux" as a full operating system (e.g. Ubuntu, Fedora, Debian) is really the Linux kernel combined with GNU tools and utilities, packaged by a "distribution" (distro). This is the free, open-source answer to Unix's proprietary licensing problem described above.
+
+---
 
 Q. Who created GNU, and what does it stand for?
 
@@ -54,11 +60,15 @@ Expanded: Richard Stallman founded the GNU Project in 1983 (predating the Linux 
 | What Linux provided | Exactly that missing kernel (1991) |
 | GNU + Linux | Combined = a complete, free, usable operating system ("GNU/Linux") |
 
+---
+
 Q. Why did GNU/Linux become popular with companies?
 
 A. (Teacher's definition) Because it was not only open source, but also completely free, it became a very attractive option for companies who wanted an operating system to use in their data centers.
 
 Expanded: Proprietary Unix variants (Solaris, AIX, HP-UX) required per-machine/per-seat licensing fees - expensive at data center scale, where a company might run thousands of servers. GNU/Linux offered the same Unix-like capabilities (multi-user, multi-tasking, scriptable, stable) with zero licensing cost and no vendor lock-in, since the source code itself was freely available to inspect, modify, and redistribute. This combination (free + open source) made it the default choice for server/data center infrastructure, which is exactly why Linux underlies the vast majority of servers, cloud infrastructure, and - relevant to this course - Big Data tooling (Hadoop, Spark, Kafka, etc. all run on Linux).
+
+---
 
 Q. What is a Linux Distribution?
 
@@ -75,6 +85,8 @@ Expanded: Since the Linux kernel and GNU tools are both free/open, different org
 | Amazon Linux | AWS's own distro, optimized for EC2 |
 | Arch Linux | Minimal, highly configurable, for users who want full control |
 | Zorin OS | Designed to look/feel as close to Windows as possible - good for beginners transitioning from Windows |
+
+---
 
 Q. What are the broad categories (families) of Linux distributions?
 
@@ -93,6 +105,18 @@ Expanded: Rather than being one flat list, Linux distributions group into a few 
 
 (More families may exist - e.g. SUSE - but Debian, Enterprise Linux, and Arch are the three major categories covered in class.)
 
+Expanded (correction): Fedora belongs to the Red Hat family, but it is not an enterprise distro itself. It is the free, community-run upstream where new features are tested before they reach RHEL. The flow is Fedora (upstream/testing) -> CentOS Stream -> RHEL. Rocky Linux and AlmaLinux are the free rebuilds of RHEL, and Amazon Linux (used on EC2) is also in this family (it uses `dnf`/`yum`).
+
+| Distro | Role in the Red Hat family |
+|---|---|
+| Fedora | Community upstream, fast-moving |
+| CentOS Stream | Preview of the next RHEL minor release |
+| RHEL | Paid enterprise release with support |
+| Rocky / AlmaLinux | Free RHEL-compatible rebuilds |
+| Amazon Linux 2023 | AWS's distro, Fedora-based |
+
+---
+
 Q. What is a package manager?
 
 A. (Teacher's definition) A package manager is a tool, usually but not always used on the command line, which provides a simple way to download and install software packages.
@@ -108,6 +132,8 @@ Expanded: Instead of manually downloading, compiling, and installing software (a
 Note: `apt` is the newer, simplified command-line tool; `apt-get` is the older, more granular tool it was built on top of. Both still work on Debian-family systems - `apt` is generally recommended for everyday interactive use.
 
 Note: Similarly, RPM is the original/underlying package manager for Enterprise Linux (also the name of the `.rpm` package format itself); DNF (and its predecessor YUM) are higher-level tools built on top of RPM that handle dependency resolution automatically - similar to how apt is built on top of the lower-level dpkg for Debian.
+
+---
 
 Q. What is the difference between `sudo apt` and `snap`?
 
@@ -200,9 +226,11 @@ A. (Teacher's definition) pyenv is a tool for managing multiple Python versions 
 | Linux / Mac | github.com/pyenv/pyenv | The main version of pyenv |
 | Windows | github.com/pyenv-win/pyenv-win | Separate Windows-specific port - install via PowerShell (Administrator mode required, not cmd) |
 
-## Agent Generated Notes (from Class Recording): Using pyenv
+---
 
-A. (From class recording) Demonstrated use case: running a script with the wrong Python version can produce a cryptic, hard-to-diagnose error even though the code "looks perfectly normal" - switching Python versions with pyenv resolved it immediately.
+Q. How do I use pyenv day to day?
+
+A. (From class) Demonstrated use case: running a script with the wrong Python version can produce a cryptic, hard-to-diagnose error even though the code "looks perfectly normal" - switching Python versions with pyenv resolved it immediately.
 
 | Command | What it does |
 |---|---|
@@ -364,15 +392,15 @@ Warning: `rm -rf` is one of the most dangerous commands in Linux - no confirmati
 
 ---
 
-## Agent Generated Notes (from Class Recording)
-
 Q. What does the terminal prompt actually show, and what does `~` mean?
 
-A. (From class recording) A typical prompt looks like `username@hostname:~$` - the part before the `@` is your username, the part after is the machine's hostname. The `~` (tilde) is shorthand for your home directory (`/home/<username>`) - it's not the same as the root directory. To type `~` on most keyboards, it's the key just below Escape, pressed with Shift.
+A. (From class) A typical prompt looks like `username@hostname:~$` - the part before the `@` is your username, the part after is the machine's hostname. The `~` (tilde) is shorthand for your home directory (`/home/<username>`) - it's not the same as the root directory. To type `~` on most keyboards, it's the key just below Escape, pressed with Shift.
+
+---
 
 Q. What are the main top-level directories in the Linux filesystem, and what's each one for?
 
-A. (From class recording) Running `ls /` (the root directory) shows the main folders every Linux system organizes itself around:
+A. (From class) Running `ls /` (the root directory) shows the main folders every Linux system organizes itself around:
 
 | Directory | Purpose |
 |---|---|
@@ -392,9 +420,13 @@ A. (From class recording) Running `ls /` (the root directory) shows the main fol
 
 Note: `/bin` vs `/usr/bin` often look nearly identical in practice on modern systems.
 
+Expanded (correction): On modern Ubuntu (and most current distros), `/bin` is just a symlink to `/usr/bin` - the "merged /usr" layout. So programs like `apt` actually live in `/usr/bin`; `/bin/apt` resolves to the same file. `/sbin` is likewise a symlink to `/usr/sbin`.
+
+---
+
 Q. How do I navigate relative to my current directory?
 
-A. (From class recording) `cd ..` moves up one directory level (to the parent). You can chain it with a path, e.g. `cd ../home` goes up one level then into `home`. A single dot `.` refers to the current directory - so `ls .` is equivalent to just `ls`.
+A. (From class) `cd ..` moves up one directory level (to the parent). You can chain it with a path, e.g. `cd ../home` goes up one level then into `home`. A single dot `.` refers to the current directory - so `ls .` is equivalent to just `ls`.
 
 ---
 
@@ -456,11 +488,11 @@ cat locked.txt               # Works
 
 Note: there's a subtle distinction with deleting a file - deletion is primarily controlled by the permissions on the containing directory, not the file itself. So a `chmod 000 locked.txt` file can often still be deleted by its owner if they have sufficient permissions on the directory containing it.
 
-## Agent Generated Notes (from Class Recording)
+---
 
 Q. How do I create and manage users and groups?
 
-A. (From class recording)
+A. (From class)
 
 | Command | What it does |
 |---|---|
@@ -475,9 +507,11 @@ A. (From class recording)
 
 Note: always use `-aG` together when adding a user to a group with `usermod` - using `-G` alone without `-a` replaces all of a user's existing group memberships with just the one specified, which is rarely what you want.
 
+---
+
 Q. What do the numeric chmod codes (like 600, 644, 777) actually mean?
 
-A. (From class recording) Each permission digit is a sum of: **4** = read, **2** = write, **1** = execute. Three digits represent owner / group / everyone else, in that order.
+A. (From class) Each permission digit is a sum of: **4** = read, **2** = write, **1** = execute. Three digits represent owner / group / everyone else, in that order.
 
 | Code | Meaning |
 |---|---|
@@ -489,9 +523,49 @@ A. (From class recording) Each permission digit is a sum of: **4** = read, **2**
 
 There's no way to intuit these codes from first principles - they just have to be memorized (or computed from the 4/2/1 rule above).
 
+**Interview line (chmod 755):** "755 means the owner gets read, write and execute (4+2+1 = 7), and the group and everyone else get read and execute (4+1 = 5). It's the standard setting for scripts and directories that others need to run or enter but not change."
+
+---
+
+Q. How do I read the permission string from `ls -l` (e.g. `-rwxr-x---`)?
+
+A. The first character is the file type, then three groups of three characters: owner, group, others.
+
+Expanded:
+
+| Position | Example `-rwxr-x---` | Meaning |
+|---|---|---|
+| 1 | `-` | File type: `-` file, `d` directory, `l` symlink |
+| 2-4 | `rwx` | Owner: read, write, execute (7) |
+| 5-7 | `r-x` | Group: read, execute (5) |
+| 8-10 | `---` | Others: nothing (0) |
+
+So `-rwxr-x---` = `chmod 750`. On a directory, `x` means "may enter it (`cd`)" and `r` means "may list it".
+
+---
+
+Q. How do I change a file's owner or group, and what is `umask`?
+
+A. `chown` changes the owner (and optionally group), `chgrp` changes only the group, and `umask` sets which permissions are removed from new files by default.
+
+Expanded:
+
+| Command | What it does |
+|---|---|
+| `sudo chown alex file.txt` | Make `alex` the owner |
+| `sudo chown alex:data_team file.txt` | Set owner and group together |
+| `sudo chown -R alex:data_team /data` | Recursive - whole directory tree |
+| `chgrp data_team file.txt` | Change only the group |
+| `umask` | Show the current mask (commonly `0022` or `0002`) |
+| `umask 027` | New files get no permissions for others |
+
+New files start from 666 (directories from 777) and the umask bits are removed. With `umask 022`, new files are 644 and new directories are 755.
+
+---
+
 Q. What's the symbolic (non-numeric) way to change permissions?
 
-A. (From class recording) Symbolic `chmod` uses a target (`u`=user/owner, `g`=group, `o`=others) plus `+` or `-` plus the permission letter (`r`/`w`/`x`):
+A. (From class) Symbolic `chmod` uses a target (`u`=user/owner, `g`=group, `o`=others) plus `+` or `-` plus the permission letter (`r`/`w`/`x`):
 
 | Command | Effect |
 |---|---|
@@ -501,13 +575,21 @@ A. (From class recording) Symbolic `chmod` uses a target (`u`=user/owner, `g`=gr
 | `chmod u+rw file.txt` | Add read+write access for the owner |
 | `chmod +x script.sh` | Add execute permission for everyone - the standard way to make a script runnable |
 
+---
+
 Q. Why do I get "Permission denied" when running my own shell script with `./script.sh`?
 
-A. (From class recording) A newly created script file has read/write permission but not execute permission by default. Before `./script.sh` will run, you need to grant execute permission: `chmod +x script.sh`. This is a very common first-time gotcha with shell scripts.
+A. (From class) A newly created script file has read/write permission but not execute permission by default. Before `./script.sh` will run, you need to grant execute permission: `chmod +x script.sh`. This is a very common first-time gotcha with shell scripts.
+
+---
 
 Q. What is `sudo su`, and why doesn't every user get sudo access?
 
-A. (From class recording) `sudo su` switches you into a persistent super-user session (rather than prefixing every single command with `sudo`) - press Ctrl+D to exit back to your normal user. Only users in the `sudo` group can use `sudo` at all - `sudo usermod -aG sudo <user>` grants that. This is deliberately restricted: on a shared/company system, giving every user unrestricted super-user power would let any single disgruntled or careless user do serious damage. In a real company, getting new software/packages installed on a shared system typically means going through a system administrator or admin team rather than just running `sudo` yourself.
+A. (From class) `sudo su` switches you into a persistent super-user session (rather than prefixing every single command with `sudo`) - press Ctrl+D to exit back to your normal user. Only users in the `sudo` group can use `sudo` at all - `sudo usermod -aG sudo <user>` grants that. This is deliberately restricted: on a shared/company system, giving every user unrestricted super-user power would let any single disgruntled or careless user do serious damage. In a real company, getting new software/packages installed on a shared system typically means going through a system administrator or admin team rather than just running `sudo` yourself.
+
+Expanded (correction): The `sudo` group name is Debian/Ubuntu-specific. On RHEL, Fedora, Rocky and Amazon Linux (what EC2 usually runs), the admin group is `wheel`, so you grant sudo with `sudo usermod -aG wheel <user>`. On Amazon Linux the default `ec2-user` already has sudo.
+
+---
 
 # grep / awk / sed
 
@@ -515,7 +597,7 @@ Q. What is a regular expression (regex)?
 
 A. A pattern for finding, validating, extracting, or replacing text. The core regex concepts are the same across Linux tools and Python - only the syntax/API used to invoke them differs. `grep`, `sed`, and `awk` are the tools that actually do the matching; the shell itself doesn't perform regex matching.
 
-## Core regex syntax
+Expanded - core regex syntax:
 
 | Pattern | Meaning | Example |
 |---|---|---|
@@ -526,7 +608,7 @@ A. A pattern for finding, validating, extracting, or replacing text. The core re
 | `[abc]` | One character from the set | `[abc]at` |
 | `[^abc]` | Anything except these | `[^0-9]` |
 | `[a-z]` | Character range | `[A-Z]` |
-| `\d` | Digit (Python/Perl-style) | `\d+` |
+| `\d` | Digit (Python/Perl-style - see "Works in" table below) | `\d+` |
 | `\w` | Word character | `\w+` |
 | `\s` | Whitespace | `\s+` |
 | `^` | Beginning of line/string | `^ERROR` |
@@ -538,7 +620,21 @@ A. A pattern for finding, validating, extracting, or replacing text. The core re
 
 Key point: `*`, `+`, and `?` modify whatever comes immediately before them - e.g. `[0-9]+` means "one or more digits."
 
-## grep
+Expanded (correction): The shorthand classes are not part of POSIX regex, so they do not all work in `grep -E`. `\d` does not work in `grep -E` at all - use `[0-9]` or `[[:digit:]]`, or switch to `grep -P` (Perl-compatible, GNU grep only). `\w` and `\s` work in GNU grep as GNU extensions, but not in every grep (for example older BSD/macOS grep), so `[[:alnum:]_]` and `[[:space:]]` are the portable forms.
+
+| Pattern | `grep -E` (POSIX ERE) | `grep -P` (PCRE) | Python `re` | Portable alternative |
+|---|---|---|---|---|
+| `\d` | No | Yes | Yes | `[0-9]` or `[[:digit:]]` |
+| `\w` | GNU extension only | Yes | Yes | `[[:alnum:]_]` |
+| `\s` | GNU extension only | Yes | Yes | `[[:space:]]` |
+
+---
+
+Q. How do I use grep with regex (`grep -E`, `grep -o`)?
+
+A. `grep` prints the lines of a file that match a pattern; `-E` turns on extended regex and `-o` prints only the matching part.
+
+Expanded:
 
 ```
 grep "ERROR" application.log              # basic search
@@ -574,9 +670,11 @@ Negated character classes - `^` means something different inside `[...]`:
 grep -oE "[^0-9]+" demo.txt        # anything that is NOT a digit
 ```
 
-## Regex in Bash scripts
+---
 
-The `=~` operator checks if a string matches a regex:
+Q. How do I use regex inside a Bash script (`=~`, `BASH_REMATCH`)?
+
+A. The `=~` operator checks if a string matches a regex:
 ```bash
 value="customer_12345"
 if [[ $value =~ ^customer_[0-9]+$ ]]; then
@@ -598,7 +696,13 @@ fi
 ```
 The parentheses `([0-9]+)` create a capture group.
 
-## Regex in Python (the `re` module)
+---
+
+Q. How do I use regex in Python (the `re` module)?
+
+A. Python's `re` module provides `re.search`, `re.findall`, `re.sub`, `re.split` and `re.match`. See Training 2 for Python in general.
+
+Expanded:
 
 `re.search()` - find a pattern anywhere in a string:
 ```python
@@ -666,9 +770,11 @@ if match:
 # {'date': '2026-09-11', 'level': 'ERROR', 'server': 'db01', 'message': 'connection_failed'}
 ```
 
-## Shell vs Python - the same pattern, different tools
+---
 
-Given `customer_id=10023`, the conceptual regex `customer_id=([0-9]+)` looks like this across tools:
+Q. How does the same regex look in Bash, Python and grep?
+
+A. Given `customer_id=10023`, the conceptual regex `customer_id=([0-9]+)` looks like this across tools:
 
 | Tool | Code |
 |---|---|
@@ -680,9 +786,11 @@ The key idea: regex is the pattern language - Bash, grep, Python, sed, Spark, da
 
 Learning priority for beginners: `[0-9]`, `[A-Za-z]`, `.`, `*`, `+`, `^`, `$`, `{n}`, `[^...]`, groups, and `|` first - then practice them via `grep -E`, Bash `=~`, and Python's `re.search`/`re.findall`/`re.sub`.
 
-## Agent Generated Notes (from Class Recording): grep, awk, sed on real CSV data
+---
 
-A. (From class recording) A practical walkthrough using an `employees.csv` file with columns `employee_id,name,department,city,salary,status`:
+Q. How do grep, awk and sed differ on a real CSV?
+
+A. (From class) A practical walkthrough using an `employees.csv` file with columns `employee_id,name,department,city,salary,status`:
 
 **grep** - text search:
 ```
@@ -709,13 +817,47 @@ Key distinction: without `-i`, `sed` only prints the transformed output to the t
 
 Summary of what each tool is for: `grep` searches, `awk` parses/selects structured row-and-column data, `sed` performs search-and-replace transformations on a text stream.
 
+| Tool | Job | Typical use |
+|---|---|---|
+| `grep` | Find lines that match a pattern | `grep -c ERROR app.log` |
+| `awk` | Split lines into fields and select/compute | `awk -F, '$4 > 80000 {print $2, $4}' employees.csv` |
+| `sed` | Find and replace in a text stream | `sed -i.bak 's/Engineering/Technology/g' employees.csv` (`.bak` keeps a backup) |
+
+---
+
+# Pipes & Redirection
+
+Q. How do pipes and redirection work (stdout, stderr, `|`, `>`, `2>&1`)?
+
+A. Every process has three streams: stdin (0, input), stdout (1, normal output) and stderr (2, error output). Redirection sends a stream to or from a file; a pipe `|` sends one command's stdout into the next command's stdin.
+
+Expanded:
+
+| Syntax | What it does |
+|---|---|
+| `cmd > out.txt` | stdout to a file (overwrite) |
+| `cmd >> out.txt` | stdout to a file (append) |
+| `cmd < in.txt` | Read stdin from a file |
+| `cmd 2> err.txt` | stderr to a file |
+| `cmd > all.log 2>&1` | stdout and stderr both to the same file (order matters: `>` first, then `2>&1`) |
+| `cmd > /dev/null 2>&1` | Throw away all output |
+| `cmd1 \| cmd2` | stdout of cmd1 becomes stdin of cmd2 |
+| `cmd \| tee out.txt` | Show output and also save it to a file |
+
+Example - top 10 error messages in a log:
+```bash
+grep ERROR app.log | sort | uniq -c | sort -rn | head
+```
+
+**Interview line:** "stdout is file descriptor 1 and stderr is 2. To send errors to a file I use `2> errors.log`; to capture both in one log I write `> job.log 2>&1`. Pipes pass stdout from one command into the next, so I can chain small tools like grep, sort and uniq."
+
 ---
 
 # Processes
 
 Q. How do I see what processes are running, and stop one?
 
-A. (From class recording)
+A. (From class)
 
 | Command | What it does |
 |---|---|
@@ -728,9 +870,34 @@ A. (From class recording)
 
 Example flow: start a background job (`uvicorn main:app &`), confirm it's running with `ps` or `jobs`, then `kill <PID>` to stop it and confirm with `ps` again that it's gone.
 
+Expanded: A process is a running instance of a program. Every process gets a PID (process ID) and has a parent (PPID). A foreground process owns your terminal until it ends; a background process (`&`) runs while you keep typing. `kill` does not literally "kill" - it sends a signal, and the default signal is SIGTERM.
+
+| Signal | Number | Command | What happens |
+|---|---|---|---|
+| SIGTERM | 15 | `kill <PID>` | Polite stop - the program can clean up (close files, finish writes) |
+| SIGKILL | 9 | `kill -9 <PID>` | Forced stop by the kernel - no cleanup, can leave partial files |
+| SIGINT | 2 | `Ctrl+C` | Interrupt the foreground process |
+| SIGSTOP/SIGTSTP | - | `Ctrl+Z` | Pause (suspend) the foreground process |
+| SIGHUP | 1 | terminal closes | Hangup - why `nohup` exists |
+
+| Job control | What it does |
+|---|---|
+| `Ctrl+Z` | Suspend the foreground job |
+| `jobs` | List jobs in this terminal |
+| `bg %1` | Resume job 1 in the background |
+| `fg %1` | Bring job 1 to the foreground |
+| `pgrep sleep` | Find PIDs by name |
+| `pkill sleep` | Send SIGTERM to processes by name |
+
+**Interview line (`kill` vs `kill -9`):** "`kill` sends SIGTERM, which asks the process to shut down cleanly. `kill -9` sends SIGKILL, which the process can't catch - the kernel ends it immediately with no cleanup. I always try plain `kill` first and use `-9` only if the process is stuck."
+
+**Interview line (port in use):** "To find what's using port 8080 I run `sudo lsof -i :8080` or `ss -ltnp | grep 8080`, which show the PID, then I stop it with `kill <PID>`."
+
+---
+
 Q. How do I check system resource usage (CPU, memory, disk)?
 
-A. (From class recording)
+A. (From class)
 
 | Command | What it does |
 |---|---|
@@ -742,13 +909,37 @@ A. (From class recording)
 
 Note: an NVMe drive is a data storage standard based on the same flash memory as an SSD/USB stick, but designed for a specific physical motherboard slot - not every motherboard has one.
 
+Expanded (correction): NVMe (Non-Volatile Memory Express) is a protocol/interface, not a type of memory or a slot. An NVMe drive is an SSD that talks to the CPU over PCIe lanes using the NVMe protocol, which makes it several times faster than a SATA SSD. It usually plugs into an M.2 slot (M.2 is the physical form factor; M.2 slots can also carry SATA SSDs). On Linux, NVMe drives show up as `/dev/nvme0n1` - which is also what EBS volumes look like on modern EC2 instances.
+
+---
+
+Q. What is a log triage toolkit on Linux?
+
+A. A short set of commands for reading and searching logs and finding big or old files on a server.
+
+Expanded:
+
+| Command | What it does |
+|---|---|
+| `tail -n 50 app.log` | Last 50 lines |
+| `tail -f app.log` | Follow the file live as new lines are written |
+| `head -n 20 app.log` | First 20 lines |
+| `wc -l app.log` | Count lines |
+| `less app.log` | Scroll a big file (`/text` to search, `q` to quit) |
+| `grep -c ERROR app.log` | Count matching lines |
+| `find /var/log -name "*.log" -mtime +7` | Log files older than 7 days |
+| `find . -name "*.csv" \| xargs wc -l` | Run a command on every file found |
+| `du -sh /data/*` | Size of each folder, human-readable |
+| `df -h` | Free disk space per filesystem |
+| `logrotate` | System tool that rotates, compresses and deletes old logs (config in `/etc/logrotate.d/`) |
+
 ---
 
 # cron
 
 Q. What is cron, and how does its scheduling syntax work?
 
-A. (From class recording) Cron is a built-in Linux automation feature included in every distribution, used to run a command on a repeating schedule. Edit your scheduled jobs with `crontab -e`.
+A. (From class) Cron is a built-in Linux automation feature included in every distribution, used to run a command on a repeating schedule. Edit your scheduled jobs with `crontab -e`.
 
 The schedule syntax is 5 fields, in this order: **minute, hour, day (of month), month, weekday**. A `*` in any field means "every" value for that field.
 
@@ -756,8 +947,22 @@ The schedule syntax is 5 fields, in this order: **minute, hour, day (of month), 
 * * * * *   command    # runs every single minute
 0 * * * *   command    # runs once every hour, at the :00 minute mark
 30 9 * * *  command    # runs every day at 9:30am
-30 9 * * 1  command    # runs every Monday at 9:30am (weekday is roughly 0-6)
+30 9 * * 1  command    # runs every Monday at 9:30am (weekday is 0-7: 0 and 7 are both Sunday)
+0 2 * * 1-5 command    # runs at 2:00am Monday through Friday
 ```
+
+| Shortcut | Same as |
+|---|---|
+| `@hourly` | `0 * * * *` |
+| `@daily` | `0 0 * * *` |
+| `@weekly` | `0 0 * * 0` |
+| `@reboot` | Once at startup |
+
+| Command | What it does |
+|---|---|
+| `crontab -e` | Edit your jobs |
+| `crontab -l` | List your jobs |
+| `crontab -r` | Remove all your jobs (careful) |
 
 Example used in class - append a line to a file every minute:
 ```
@@ -765,6 +970,14 @@ Example used in class - append a line to a file every minute:
 ```
 
 To temporarily disable a scheduled job without deleting it, comment it out with `#` at the start of the line inside `crontab -e`.
+
+Expanded - cron gotchas:
+- Cron runs with a minimal environment and a short PATH, so use absolute paths (`/usr/bin/python3 /home/alex/job.py`), not `python3 job.py`.
+- Output is not shown anywhere, so redirect it: `>> /var/log/job.log 2>&1`, or failures vanish silently.
+- Cron uses the server's time zone.
+- Cron does not retry, alert or track dependencies - that is why orchestrators like Airflow exist.
+
+**Interview line:** "A cron expression has five fields: minute, hour, day of month, month, day of week. 2 AM on weekdays is `0 2 * * 1-5`."
 
 Note: **Apache Airflow** (a much more full-featured automation/orchestration tool used in big data, with a web UI and step-based job tracking) uses this exact same 5-field cron syntax to schedule when a DAG/job runs - learning cron's syntax here directly transfers to scheduling Airflow jobs later in the course.
 
@@ -774,7 +987,7 @@ Note: **Apache Airflow** (a much more full-featured automation/orchestration too
 
 Q. What is a shell script, and how do I make one runnable?
 
-A. (From class recording) A shell script is just a text file containing a list of the same commands you'd type on the command line, executed in sequence, one after another. It starts with a "shebang" line telling the system which program should interpret it:
+A. (From class) A shell script is just a text file containing a list of the same commands you'd type on the command line, executed in sequence, one after another. It starts with a "shebang" line telling the system which program should interpret it:
 
 ```bash
 #!/bin/bash
@@ -787,9 +1000,57 @@ Before it can be run, it needs execute permission (see `chmod +x` above), then i
 
 Practical use case: provisioning a brand-new server that only has Linux installed (no Python, no Spark, none of your dependencies) - a shell script can list every install/setup command needed (installing packages, cloning a git repo, setting environment variables) so the whole environment gets set up in one execute, rather than typing each command by hand.
 
+---
+
+Q. What are the core shell scripting building blocks (variables, arguments, exit codes, if/for, functions, `set -euo pipefail`)?
+
+A. Bash scripts use variables, positional arguments, exit codes, conditionals, loops and functions, and production scripts start with `set -euo pipefail` so they fail loudly.
+
+Expanded:
+
+| Feature | Syntax | Meaning |
+|---|---|---|
+| Variable | `name="alex"`, then `"$name"` | No spaces around `=`; quote when using |
+| Arguments | `$1`, `$2`, `$@`, `$#` | First arg, second arg, all args, count |
+| Exit code | `$?` | 0 = success, anything else = failure |
+| If | `if [[ -f "$f" ]]; then ... fi` | `-f` file exists, `-d` directory exists |
+| For | `for f in *.csv; do ... done` | Loop over files |
+| While | `while read -r line; do ... done < file` | Loop over lines |
+| Function | `log() { echo "$(date) $*"; }` | Reusable block |
+| `set -e` | | Exit as soon as a command fails |
+| `set -u` | | Error on an unset variable |
+| `set -o pipefail` | | A pipeline fails if any command in it fails |
+
+Example - process every CSV in a folder, log results, exit non-zero on failure:
+```bash
+#!/bin/bash
+set -euo pipefail
+
+INPUT_DIR="${1:?usage: $0 <input_dir>}"
+LOG=/tmp/ingest.log
+failed=0
+
+log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+
+for f in "$INPUT_DIR"/*.csv; do
+    if rows=$(wc -l < "$f"); then
+        log "OK $f rows=$rows"
+    else
+        log "FAIL $f"
+        failed=1
+    fi
+done
+
+exit "$failed"
+```
+
+**Interview line:** "`set -euo pipefail` makes a Bash script stop on the first failed command, treat unset variables as errors, and fail a pipeline if any step fails - so a broken step can't silently produce bad data."
+
+---
+
 Q. How do I check whether a system service is running, and view its logs?
 
-A. (From class recording)
+A. (From class)
 
 | Command | What it does |
 |---|---|
@@ -797,9 +1058,30 @@ A. (From class recording)
 | `sudo systemctl start \| stop \| restart <service>` | Start, stop, or restart a service |
 | `sudo systemctl enable \| disable <service>` | Control whether a service auto-starts on system boot |
 | `systemctl list-units --type=service --state=running` | List all currently running services |
-| `sudo journalctl <service>` | View a service's logs - essential for diagnosing what went wrong when something fails |
+| `sudo journalctl -u <service>` | View a service's logs - essential for diagnosing what went wrong when something fails |
+| `sudo journalctl -u <service> -n 10` | Last 10 log entries for the service |
+| `sudo journalctl -u <service> -f` | Follow the service's log live |
+| `sudo journalctl -u <service> --since "1 hour ago"` | Entries from the last hour |
 
 Note: paginated command output (from `systemctl status`, `journalctl`, etc.) can't be exited by typing - press the **`q`** key to return to the prompt.
+
+Expanded (correction): `journalctl` needs the `-u` (unit) flag to filter by service - `journalctl -u ssh`, not `journalctl ssh`. Without `-u`, the argument is not treated as a service name.
+
+---
+
+Q. How do I connect to a remote server with SSH and copy files with scp?
+
+A. `ssh` opens an encrypted shell on a remote machine; `scp` copies files over the same connection.
+
+Expanded: On AWS, EC2 and EMR use key pairs. SSH refuses a private key file that others can read, so lock it down first.
+
+| Command | What it does |
+|---|---|
+| `chmod 400 key.pem` | Make the private key readable only by you (required) |
+| `ssh -i key.pem ec2-user@<host>` | Log in (Amazon Linux user is `ec2-user`, Ubuntu is `ubuntu`, EMR primary node is `hadoop`) |
+| `scp -i key.pem data.csv ec2-user@<host>:/home/ec2-user/` | Copy a local file to the server |
+| `scp -i key.pem ec2-user@<host>:/var/log/app.log .` | Copy a file from the server |
+| `ssh-keygen -t ed25519` | Create your own key pair |
 
 ---
 
@@ -844,7 +1126,9 @@ curl -X POST https://api.example.com/users \
 
 *(Shared by the teacher - a practical cheat sheet, same category as the other terminal tools above.)*
 
-Vim has different **modes** - the same key does different things depending on which mode you're in. This is the single biggest thing that trips up newcomers: pressing a letter key does nothing visible until you understand which mode you're in.
+Q. What are Vim's modes and the survival commands?
+
+A. Vim has different **modes** - the same key does different things depending on which mode you're in. This is the single biggest thing that trips up newcomers: pressing a letter key does nothing visible until you understand which mode you're in.
 
 ## Modes
 
@@ -1025,87 +1309,6 @@ These commands are enough to handle the vast majority of situations where a data
 
 ---
 
-# Homework Assignment: Linux Users, Permissions, Text Processing & Processes
+# Homework
 
-## Objective
-
-Practice the Linux commands covered in class, including user management, file permissions, `grep`, `awk`, `sed`, shell scripting, process management, and `systemctl`.
-
-Complete each exercise from the Linux terminal. For each exercise, submit the commands used and the resulting terminal output.
-
-## Exercises
-
-1. **Create and manage a user**
-   Create a new Linux user named `data_student`. Verify that the user exists using an appropriate command. Create a group named `data_team` and add `data_student` to that group. Display the user's UID, GID, and group memberships.
-
-2. **Practice file permissions**
-   Create a file named `confidential.txt` containing at least one line of text. Change its permissions so that the owner can read and write it, the group can only read it, and everyone else has no permissions. Display the resulting permissions with `ls -l`. Do this using numeric `chmod` notation.
-
-3. **Practice symbolic `chmod`**
-   Create a shell script named `hello.sh` that prints `Hello from Linux!`. Attempt to execute it before giving it execute permission. Then use symbolic `chmod` notation to give the owner execute permission and successfully run the script.
-
-4. **Search data with `grep`**
-   Create a file called `application.log` containing at least 10 lines. At least three lines should contain `ERROR`, two should contain `WARNING`, and the others should contain `INFO`. Use `grep` to:
-   - Find all `ERROR` lines.
-   - Find both `ERROR` and `WARNING` lines using one command.
-   - Count the number of lines containing `ERROR`.
-
-5. **Process CSV data with `awk`**
-   Create `employees.csv` with this structure and at least six employees:
-   ```
-   id,name,department,salary
-   1,Alice,Engineering,95000
-   2,Bob,Sales,72000
-   ```
-   Use `awk` to display only employee names and salaries. Then use another `awk` command to display only employees earning more than $80,000.
-
-6. **Transform data with `sed`**
-   Using your `employees.csv` file, use `sed` to replace every occurrence of `Engineering` with `Technology`. First display the transformed data without changing the original file. Then create a backup and use `sed` to make the change in the actual file.
-
-7. **Create a system-information shell script**
-   Create a script named `system_report.sh` that prints:
-   - Current username
-   - Current date and time
-   - Current working directory
-   - Available disk space
-   - Memory usage
-   - System uptime
-
-   Give the script appropriate execute permissions and run it using `./system_report.sh`.
-
-8. **Investigate running processes**
-   Start the following process in the background: `sleep 500 &`. Find its PID using `ps` or `pgrep`. Verify that it is running, terminate it using `kill`, and then demonstrate that the process no longer exists.
-
-9. **Foreground and background jobs**
-   Start `sleep 1000`. Suspend the process using the appropriate keyboard shortcut. Use `jobs` to display it, resume it in the background, use `jobs` again to verify its status, bring it back to the foreground, and finally terminate it.
-
-10. **Investigate a system service**
-    Choose an existing systemd service on your machine, such as `ssh`, `cron`, or `docker`. Use `systemctl` to determine:
-    - Whether the service is running.
-    - Whether it is enabled at boot.
-    - The service's main PID, if running.
-
-    Then use `journalctl` to display the most recent 10 log entries for that service.
-
-    Do not disable or permanently modify an important system service.
-
-## Submission
-
-Submit a single text or Markdown file named `linux_homework_<your_name>.txt`.
-
-For each exercise include:
-```
-Exercise 1
-
-Commands:
-<commands you used>
-
-Output:
-<relevant terminal output>
-
-Explanation:
-<1-3 sentences explaining what the commands did>
-```
-
-The goal is not simply to get the expected output. You should be able to explain why the command worked and what its important options mean.
-
+The full homework prompt (Linux users, permissions, text processing and processes) is in `homework/assignment/Homework - Training 1 (Assignment).md`.

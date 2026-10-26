@@ -13,7 +13,9 @@ Syllabus Day 15 (per file numbering) - topic: MongoDB + Spark Streaming (per `Co
 
 ## Formatting a Kafka Cluster
 
-Teacher's definition: "to format a kafka cluster:"
+Q. How do you initialize a KRaft-mode Kafka broker?
+
+A. (Teacher's definition) "to format a kafka cluster:"
 
 ```bash
 bin/kafka-storage.sh format \
@@ -51,7 +53,7 @@ Things to watch for:
 
 ---
 
-# Agent Generated Notes
+# Environment Concepts (venv / container / VM)
 
 Not from the teacher. Added from questions asked during class while setting up PyFlink with `pip install apache-flink`.
 
@@ -91,7 +93,11 @@ Expanded: a **virtual machine** (VM) is a complete computer simulated in softwar
 
 In data engineering, VMs are everywhere even when you don't see them: every **AWS EC2 instance** is a VM, and Spark or Kafka clusters in the cloud usually run on fleets of VMs.
 
+---
+
 ## Virtual Environment vs. Container vs. Virtual Machine
+
+Q. What is the difference between a virtual environment, a container and a virtual machine?
 
 Despite the shared word "virtual," a virtual environment and a virtual machine isolate completely different things. Docker containers (used for Kafka and MongoDB in the Training 13 homework) sit between them.
 
@@ -102,7 +108,7 @@ Despite the shared word "virtual," a virtual environment and a virtual machine i
 | **Size** | Megabytes | Tens to hundreds of MB | Gigabytes |
 | **Startup time** | Instant | Seconds | Tens of seconds to minutes |
 | **Isolation strength** | Weakest: just separate package folders | Medium: separate processes, network and filesystem | Strongest: separate kernel and virtual hardware |
-| **Can run a different OS?** | No | Only Linux-based on a Linux host (Mac and Windows run a hidden Linux VM underneath) | Yes, for example Windows on Linux |
+| **Can run a different OS?** | No | No: a container must match the host kernel's OS family (Linux containers on a Linux kernel, Windows containers on a Windows host; Docker Desktop on Mac/Windows runs a hidden Linux VM for Linux containers) | Yes, for example Windows on Linux |
 | **Tool** | `python3 -m venv`, `uv` | Docker, Podman | VirtualBox, VMware, KVM, Hyper-V, cloud (EC2) |
 | **Example from this course** | `.venv` for the Spark and Flink work | `kafka` and `mongodb` containers in the streaming homework; the Ubuntu container from `Training 1.md` | AWS EC2 instances |
 
@@ -129,6 +135,8 @@ Today's arc:
 
 ## Restarting a Pipeline After a Reboot
 
+Q. In what order do you restart a streaming pipeline after a reboot?
+
 Expanded: after a restart, nothing comes back automatically unless it was set up to. The order to bring things back is **storage and broker first, then producer, then consumer, then dashboard**:
 
 | Order | Component | Command | Check |
@@ -153,6 +161,8 @@ Likely reason the metadata vanished: the default `log.dirs` in Kafka's `server.p
 ---
 
 ## `python` vs. `spark-submit`
+
+Q. Why did `python consumer.py` fail where `spark-submit --packages` works?
 
 The first error after the restart, `Failed to find data source: kafka`, came from running the consumer with `python weather_consumer.py`. Plain `python` starts PySpark **without** the connector JARs; `spark-submit --packages ...` downloads and loads them. It's the same lesson as `streamlit run` vs. `python` for dashboards: **some Python programs must be started by their framework's launcher.**
 
@@ -187,6 +197,8 @@ Useful commands from the session:
 ---
 
 ## Workaround: Spark → Parquet → Streamlit (no MongoDB)
+
+Q. What are the trade-offs between a file sink and a MongoDB sink?
 
 Expanded: Spark's built-in **file sink** writes each micro-batch as new Parquet files in a folder, and the dashboard reads that folder. No database is needed, and it still shows a real-time pipeline:
 
@@ -850,6 +862,8 @@ Lessons:
 
 ## Why Flink Looked Micro-Batched, and the Final "Fix"
 
+Q. Why did the PyFlink output look micro-batched?
+
 **Cause (ChatGPT's explanation):** in PyFlink, a Python `map()` doesn't run inside Flink's Java engine. Flink's JVM sends records to a separate **Python worker process in bundles** and the results come back in bundles. So `datetime.now()` inside `map()` records when the Python worker received the *bundle*, and ~100 records got nearly the same timestamp. That's an artifact of the **Python bridge**, not of Flink's streaming model.
 
 **ChatGPT's replacement Flink consumer** stopped measuring: it sets Flink's `processed_ts` to the record's **Kafka timestamp plus a fixed, simulated 5 ms** (`simulated_processing_ms = 5`). ChatGPT called this an "educational representation." The dashboard then showed a smooth Flink line against Spark's 2-second spikes.
@@ -887,3 +901,119 @@ The dashboard included an expander, "Why does latency matter to a trading system
 | 5. Dashboard | `streamlit run market_dashboard.py --server.port 8503` |
 
 Clear old output first (`rm -f /tmp/spark-market.jsonl /tmp/flink-market.jsonl; rm -rf /tmp/spark-market-checkpoint`), because old records caused the "squashed chart" problem.
+
+---
+
+# Spark Structured Streaming: Core Concepts
+
+(Not taught as theory in class; roadmap topic "Spark Structured Streaming", added for interviews. The labs above and in `Training 13.md` use these pieces.)
+
+Q. What are Structured Streaming's output modes and triggers?
+
+Expanded:
+
+| Output mode | Writes each trigger | Allowed with |
+|---|---|---|
+| `append` (default) | Only new rows that will never change again | Plain transformations; aggregations **only with a watermark** (a window is emitted once it closes) |
+| `update` | Only rows that changed since the last trigger | Aggregations (good for upserting into a database) |
+| `complete` | The whole result table every time | Aggregations only (result must fit in state) |
+
+| Trigger | Behavior |
+|---|---|
+| Default (none set) | Start the next micro-batch as soon as the previous one finishes |
+| `trigger(processingTime="5 seconds")` | One micro-batch every 5 seconds (used in class) |
+| `trigger(availableNow=True)` | Process everything available now, in batches, then stop: incremental batch jobs (replaces `once=True`) |
+| `trigger(continuous="1 second")` | Experimental record-at-a-time mode, limited operations |
+
+---
+
+Q. What are event time, windows and watermarks?
+
+Expanded: **event time** is when the event happened (a timestamp inside the record); **processing time** is when Spark sees it. Windowed aggregations group by event time:
+
+| Window | Definition | Example |
+|---|---|---|
+| Tumbling | Fixed size, no overlap | `window("event_time", "10 minutes")` |
+| Sliding | Fixed size, overlapping, with a slide interval | `window("event_time", "10 minutes", "5 minutes")` |
+| Session | Gap-based: a window closes after N minutes of no events for that key | `session_window("event_time", "5 minutes")` |
+
+A **watermark** tells Spark how late data may arrive: watermark = max event time seen − delay. Events older than the watermark are dropped, and the state for windows older than it is deleted, which keeps state from growing forever.
+
+```python
+from pyspark.sql.functions import window, avg
+
+result = (events
+    .withWatermark("event_time", "10 minutes")                       # accept data up to 10 min late
+    .groupBy(window("event_time", "5 minutes"), "city")
+    .agg(avg("temperature").alias("avg_temp")))
+
+query = (result.writeStream
+    .outputMode("append")                                            # each window written once, after it closes
+    .format("parquet").option("path", "/tmp/weather-agg")
+    .option("checkpointLocation", "/tmp/weather-agg-chk")
+    .trigger(processingTime="1 minute")
+    .start())
+```
+
+**Interview line:** "A watermark is how long I'm willing to wait for late data. Spark keeps a window's state open until the max event time seen passes the window end plus the watermark delay, then emits it in append mode and drops the state. Anything later than that is discarded."
+
+---
+
+Q. What is state, and what does the checkpoint store?
+
+Expanded: aggregations, `dropDuplicates` and stream-stream joins are **stateful**: Spark keeps running results between micro-batches in a state store (custom logic: `applyInPandasWithState` / `transformWithState`). Use `dropDuplicates` together with a watermark, or its state grows without limit.
+
+The `checkpointLocation` folder holds:
+
+| Subfolder | Contents |
+|---|---|
+| `offsets/` | Which source offsets each batch will read (written before the batch runs) |
+| `commits/` | Which batches finished |
+| `state/` | The state store for stateful operators |
+
+- One checkpoint per query; never share it between queries.
+- Deleting it makes the query start over (from `startingOffsets`), which reprocesses or skips data and loses state. Changing the query's stateful logic (aggregation keys, window) usually needs a new checkpoint.
+
+**Interview line:** "The checkpoint holds the offsets for each batch, which batches are committed, and the state. On restart Spark re-runs the last uncommitted batch from the same offsets. Delete it and the query loses its place and its state."
+
+---
+
+Q. How does Structured Streaming achieve exactly-once?
+
+Expanded: three pieces together: a **replayable source** (Kafka, files), the **checkpoint** (offsets written before each batch, commits after), and an **idempotent or transactional sink** (file/Delta sinks commit once per batch ID; for `foreachBatch`, MERGE on a key or record the `batch_id`). Without an idempotent sink, a replayed batch is written twice, so the guarantee is at-least-once. Joins: stream-static joins (enrich events with a dimension table) need no state; stream-stream joins need watermarks on both sides plus a time-range condition so state can be cleaned up.
+
+---
+
+# MongoDB Document Model and Nested JSON
+
+(Roadmap topics for this day, added for interviews; MongoDB hands-on is in `Training 13.md`.)
+
+Q. What is MongoDB's document model, and when do you embed vs reference?
+
+Expanded: a **document** is a JSON-like record stored as **BSON** (binary JSON with extra types such as dates and ObjectId); documents live in **collections** (like tables, but with no fixed schema). Every document has a unique `_id`, by default an **ObjectId** (12 bytes, starting with a timestamp). Scaling: **replica sets** (primary + secondaries, automatic failover) and **sharding** (split a collection across servers by a shard key). Queries that reshape data use the **aggregation pipeline** (`$match` → `$group` → `$project`, `$lookup` for joins).
+
+| | Embed (nested inside the parent) | Reference (store the other `_id`) |
+|---|---|---|
+| Use when | One-to-few, read together, child doesn't grow without bound | One-to-many or unbounded, shared by many parents, updated independently |
+| Example | An order's line items, a user's addresses | A product referenced by many orders |
+| Reads | One query | Two queries or `$lookup` |
+| Watch out | 16 MB document limit | Extra lookups |
+
+Schema flexibility speeds development, but without validation (`$jsonSchema` validators) documents drift and break downstream jobs.
+
+**Interview line (MongoDB vs Postgres):** "I pick MongoDB when the data is naturally a nested document, the schema changes often, and the app reads whole documents by key. I pick Postgres when I need joins, strict schemas and multi-row transactions, like financial or relational reporting data."
+
+---
+
+Q. How do you flatten deeply nested JSON in Spark?
+
+Expanded:
+
+| Step | Code |
+|---|---|
+| Parse a JSON string with an explicit schema | `from_json(col("value"), schema)` (prefer an explicit schema in production; `schema_of_json` infers one from a sample) |
+| Pull struct fields up to columns | `select("data.*")` or `col("data.address.city")` |
+| One row per array element | `explode("items")` (drops rows with empty/null arrays); `explode_outer` keeps them |
+| Handle bad records on read | `spark.read.option("mode", "PERMISSIVE").option("columnNameOfCorruptRecord", "_corrupt_record").json(path)`; `DROPMALFORMED` drops them, `FAILFAST` errors |
+
+**Interview line:** "I parse with `from_json` and an explicit schema, select `struct.*` to lift nested fields, `explode_outer` arrays into rows, repeat level by level, and route malformed rows to a `_corrupt_record` column for quarantine instead of failing the job."

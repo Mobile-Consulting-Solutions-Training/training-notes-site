@@ -10,6 +10,8 @@ Teacher: Evan Flint
 Syllabus Day 6: SQL Fundamentals
 Coverage: Joins, aggregations, CTEs, window functions, subqueries, query plans, indexing and interview prep.
 
+---
+
 ## Video Resources
 
 | Title | Link |
@@ -21,6 +23,8 @@ Coverage: Joins, aggregations, CTEs, window functions, subqueries, query plans, 
 | Data Lakehouses Explained | https://www.youtube.com/watch?v=Enu-EH7RHHM |
 | Intro to Data Lakehouse | https://www.youtube.com/watch?v=myLiFw9AUKY |
 
+---
+
 ## References
 
 | Topic | Link |
@@ -28,6 +32,8 @@ Coverage: Joins, aggregations, CTEs, window functions, subqueries, query plans, 
 | Database Normalization | [Wikipedia - Database normalization](https://en.wikipedia.org/wiki/Database_normalization) |
 | Edgar F. Codd | [Wikipedia - Edgar F. Codd](https://en.wikipedia.org/wiki/Edgar_F._Codd) |
 | Surrogate Key | [Wikipedia - Surrogate key](https://en.wikipedia.org/wiki/Surrogate_key) |
+
+---
 
 # Analytical Databases: On-Premises vs Cloud
 
@@ -50,12 +56,21 @@ Expanded: this is a map of where analytical workloads (the OLAP side of the OLTP
 | System | Category | Notes |
 |---|---|---|
 | Hive | On-premises | Original Hadoop-stack SQL data warehouse (HiveQL over MapReduce/Spark); considered outdated today, largely superseded by faster engines |
-| DuckDB | On-premises | Lightweight, embeddable analytical database - runs locally like SQLite, but for OLAP; typically paired with an Open Table Format (e.g. Apache Iceberg) rather than used as a full warehouse on its own |
+| DuckDB | On-premises | Lightweight, embeddable analytical database - runs locally like SQLite, but for OLAP. Has its own native database file (`.duckdb`) and queries Parquet/CSV/JSON directly; Iceberg/Delta support is an optional extension |
 | Redshift | Cloud (AWS) | AWS's native columnar data warehouse (see `Training 4.md` for its columnar-storage architecture) |
 | Azure Synapse Analytics | Cloud (Azure) | Microsoft's native analytics platform (serverless/dedicated SQL pools + Spark) |
+| Microsoft Fabric (Warehouse / Lakehouse) | Cloud (Azure) | Microsoft's newer unified analytics SaaS on OneLake (Delta format); where Microsoft is steering new warehouse work (see `Training 31.md`) |
 | Databricks Delta Lake | Cloud (Azure, or other clouds) | Lakehouse approach - object storage + Delta format + Spark compute (see `Training 4.md`'s Databricks section) |
 | BigQuery | Cloud (GCP) | Google's native serverless data warehouse |
 | Snowflake | Cloud (independent, but runs on top of AWS/Azure/GCP) | Separates storage from compute (see `Training 4.md`); doesn't own its own infrastructure - deploys on top of one of the three major clouds |
+
+Expanded (correction):
+
+| Teacher's statement | More precise fact |
+|---|---|
+| DuckDB "must be used in conjunction with an OTF format file like Iceberg" | Not required. DuckDB has its own native single-file database format (`.duckdb`) and can query Parquet, CSV and JSON files directly. Iceberg and Delta are optional extensions, useful when you want a lakehouse-style table format |
+| Snowflake "requires some kind of connection to either AWS, Azure, or GCP" | You choose which cloud and region your Snowflake account runs in, but you do **not** need your own AWS/Azure/GCP account. Your own cloud account only matters for external stages (e.g. your S3 bucket), storage integrations and private networking |
+| Azure = Synapse or Databricks | Also **Microsoft Fabric** (Warehouse and Lakehouse on OneLake). Synapse dedicated SQL pools are effectively legacy for new projects |
 
 ---
 
@@ -66,6 +81,8 @@ Q. Does Databricks have a purpose-built analytical database like Redshift or Big
 A. (Teacher's definition) Databricks doesn't have a purpose built analytical database, but using Delta Lake + Delta Format is effectively the same architecture as building a local one using DuckDB and Iceberg.
 
 Expanded: unlike Redshift or BigQuery - each a single, self-contained, proprietary warehouse product - Databricks is really a *compute engine* (Spark) paired with an *open table format* (Delta) sitting on top of plain object storage (S3/ADLS/GCS). That combination of "engine + open table format + object storage" is architecturally the same pattern as running DuckDB (the engine) against Iceberg-formatted files (the open table format) locally - just at cloud/distributed scale instead of on a laptop. So Databricks Delta Lake and a self-built DuckDB + Iceberg setup aren't different categories of thing; they're the same architectural pattern applied at two different scales, which is why the "Cloud (Azure, or other clouds)" categorization for Databricks Delta Lake in the table above is a bit different in kind from Redshift/BigQuery's - it's a lakehouse pattern, not a monolithic managed database.
+
+Expanded (correction): this is outdated. Databricks now has a purpose-built SQL engine for BI: **Databricks SQL warehouses** (serverless option, running the **Photon** vectorized C++ engine) that serve SQL/BI queries over Delta tables. So the architecture is still "engine + open table format + object storage", but Databricks does offer a dedicated warehouse-style SQL product on top of it. Also note Delta Lake itself is open source (Linux Foundation), not Databricks-only.
 
 ---
 
@@ -84,6 +101,18 @@ Expanded: this is the category of workload every system on this page exists to s
 Q. Who is Ralph Kimball, and why does he come up when discussing dimensional schemas?
 
 A. Ralph Kimball is the data warehousing pioneer credited with developing **dimensional modeling** - the methodology behind the fact/dimension table, star-schema approach already introduced in `Training 4.md`'s "Building a Small Data Warehouse in PostgreSQL" section. His approach (often called the "Kimball methodology") emphasizes building a warehouse as a set of business-process-oriented star schemas, designed to be intuitive for analysts to query directly - as opposed to the competing Inmon methodology, which builds a single normalized enterprise-wide model first and derives departmental marts from it afterward.
+
+Expanded:
+
+| | Kimball (bottom-up) | Inmon (top-down) |
+|---|---|---|
+| Core model | Dimensional (star schemas) per business process | Normalized (3NF) enterprise data warehouse |
+| Build order | Build data marts first, integrate them through **conformed dimensions** | Build the central EDW first, then derive data marts from it |
+| Time to first value | Fast | Slower, more upfront design |
+| Query simplicity | High - analysts query stars directly | Lower on the EDW; marts are added for analysts |
+| Typical today | Most cloud warehouses and dbt projects | Large enterprises needing one integrated, normalized source of truth |
+
+**Interview line:** "Kimball is bottom-up: star-schema marts per business process, tied together with conformed dimensions. Inmon is top-down: a normalized enterprise warehouse first, then marts. Most modern cloud teams use Kimball-style stars, often in the Gold layer."
 
 ---
 
@@ -116,6 +145,8 @@ Expanded: a snowflake schema takes a star schema's flat dimension tables and nor
 | Data redundancy | Higher (attributes repeated) | Lower (normalized, no repetition) |
 | Query simplicity | Simpler, faster for analysts | More complex, more joins to write |
 | Best for | Most modern analytical warehouses (simplicity favored) | Cases where storage/redundancy control matters more than query simplicity |
+
+**Interview line:** "A star schema has one fact table joined directly to flat, denormalized dimensions, so queries need few joins. A snowflake schema normalizes the dimensions into sub-tables, saving some redundancy but adding joins. I'd default to star for analytics, since storage is cheap and BI tools and analysts work best with fewer joins."
 
 ---
 
@@ -155,6 +186,16 @@ Sometimes, an employee would have helped the customer buy the widget, so we have
 
 That sale would have been made at a store, so if we have multiple stores then there will be a stores table.
 
+A. Model the **sale** as the fact and the things that describe it as dimensions. `customers`, `employees` and `stores` become `dim_customer`, `dim_employee` and `dim_store` (plus `dim_product` and `dim_date`), and `fact_sales` holds one row per **line item** (the grain) with foreign keys to each dimension and the measures `quantity`, `unit_price` and `sales_amount`. A sale with no assisting employee gets a special "Unknown/None" employee row rather than a NULL key.
+
+```text
+dim_customer   dim_employee   dim_store
+        \           |           /
+         +------ fact_sales ----+
+        /    (one row per line item)
+dim_product                dim_date
+```
+
 ---
 
 # Database Normalization
@@ -162,6 +203,8 @@ That sale would have been made at a store, so if we have multiple stores then th
 Q. Who is Edgar F. Codd, and why does he come up when discussing database normalization?
 
 A. Edgar F. Codd is the researcher who invented the **relational model** for databases (the theoretical basis for every SQL database covered in this training) and later formalized the concept of **normalization** and the normal forms (1NF, 2NF, 3NF, etc.) as a way to systematically eliminate data redundancy and inconsistency in a relational schema's design.
+
+Expanded: Codd published the relational model in 1970 at IBM. It is built on relational algebra (selection, projection, join), which is what SQL implements.
 
 ---
 
@@ -213,6 +256,10 @@ A. (Teacher's definition) A more normalized database has more tables, but each o
 
 Expanded: this is the throughline connecting 1NF, 2NF, and 3NF above - each normal form works by splitting data out into an additional table (multi-valued cells become their own table for 1NF, partial dependencies get split off for 2NF, transitive dependencies get split off for 3NF). The result is a schema with more tables, each one narrower/simpler, with every piece of data stored in exactly one place. This is the direct opposite of a **star schema's** deliberately denormalized dimension tables (`Training 5.md`'s Star Schema entry above) - which is why OLTP application databases (favoring normalization, to protect against inconsistent updates) and OLAP data warehouses (favoring denormalization, to minimize joins) end up designed so differently, even though they're both "just" relational databases underneath.
 
+Expanded (correction): the main purpose of normalization is not faster reads. Normalization **reduces redundancy and prevents update, insert and delete anomalies** (a fact stored in one place can't get out of sync), and it favors **writes** (OLTP). Reads that need data from several tables usually get **slower**, because they need joins. That is exactly why analytical systems denormalize.
+
+**Interview line (normalization vs denormalization):** "Normalize OLTP systems to avoid redundancy and update anomalies and keep writes cheap. Denormalize for analytics, like a star schema, to cut joins and make reads fast, accepting some redundancy."
+
 The "logic breaks down" part is the whole reason data warehouses exist: normalization's speed benefit (scanning a smaller, narrower table) only holds when a query stays within one or two tables. An analytical question that has to pull together customer, product, order, and payment data all at once pays a real cost for every extra `JOIN` needed to reassemble that normalized data - which is exactly the cost a denormalized star schema is designed to avoid, at the price of some redundancy and update complexity.
 
 ---
@@ -231,6 +278,41 @@ The Foreign Key connection is what actually makes the star shape work mechanical
 
 ---
 
+## Dimensional Modeling Vocabulary (Interview Staples)
+
+Q. What types of fact tables are there?
+
+A. Three classic types (Kimball):
+
+| Fact table type | One row per... | Example |
+|---|---|---|
+| Transaction | Individual event, at the finest grain | One line item on a receipt (`fact_sales`) |
+| Periodic snapshot | Entity per regular time period | Account balance per customer per day; inventory level per product per week |
+| Accumulating snapshot | Process instance, updated as it moves through milestones | One row per order with `ordered_date`, `shipped_date`, `delivered_date` filled in over time |
+| Factless fact | Event or coverage with no numeric measure | Student attended class; product was on promotion that day |
+
+---
+
+Q. What are additive, semi-additive and non-additive measures?
+
+A. It describes which dimensions a measure can be summed across.
+
+| Type | Can be summed across... | Example |
+|---|---|---|
+| Additive | All dimensions | `sales_amount`, `quantity` |
+| Semi-additive | Some dimensions, but not time | Account balance, inventory level (sum across accounts is fine; summing daily balances over a month is meaningless, use average or last value) |
+| Non-additive | No dimensions | Ratios and percentages like profit margin, unit price (recompute from additive parts instead) |
+
+---
+
+Q. What are conformed and degenerate dimensions?
+
+A. A **conformed dimension** is one dimension table (same keys, same meaning) shared by several fact tables, e.g. one `dim_date` and one `dim_product` used by both `fact_sales` and `fact_returns`, so results from different stars can be compared. A **degenerate dimension** is a dimension key kept in the fact table with no dimension table of its own, e.g. `order_number` in `fact_sales`: useful for grouping line items into orders, but it has no other attributes.
+
+Expanded: conformed dimensions are what make the Kimball "bus architecture" (and a galaxy schema) work. Other common terms: a **junk dimension** groups low-cardinality flags (e.g. `is_gift`, `payment_type`) into one small table; a **role-playing dimension** is one table used in several roles (`dim_date` as order date and ship date).
+
+---
+
 # Data Visualization
 
 Q. How do data visualization tools relate to OLAP data warehouses?
@@ -243,22 +325,43 @@ Expanded: a chart or dashboard (Power BI, Tableau, etc. - see the diagram in `Tr
 
 ## Python Data Visualization Libraries
 
-Q. (Teacher's definition) In pure Python, there are a few libraries to be aware of:
+Q. What Python visualization libraries should I know?
+
+A. (Teacher's definition) In pure Python, there are a few libraries to be aware of:
 
 - **Matplotlib** - the most basic, low-level data visualization library for Python. It gives you a lot of control, but also a lot of responsibility.
 - **Seaborn** - gives a selection of higher-level APIs where you can put the data into Pandas and visualize them directly, and be sure that the charts are going to be within modern standards of how a chart should look.
 - **Plotly** - a competitor to Seaborn.
 
+Expanded:
+
+| Library | Style | Best for |
+|---|---|---|
+| Matplotlib | Low-level, full control | Custom static charts; the base other libraries build on |
+| Seaborn | High-level, built on Matplotlib, works directly with Pandas | Quick, good-looking statistical charts |
+| Plotly | High-level, interactive (HTML/JS output) | Interactive charts and dashboards (Dash, Streamlit) |
+
 ---
 
 ## BI (Business Intelligence) Tools
 
-Q. (Teacher's definition) Beyond pure Python libraries, there are also dedicated BI tools:
+Q. What dedicated BI tools should I know?
+
+A. (Teacher's definition) Beyond pure Python libraries, there are also dedicated BI tools:
 
 - **Microsoft Power BI**
 - **Tableau**
 - **AWS QuickSight**
 - **Looker**
+
+Expanded:
+
+| BI tool | Vendor / cloud affinity |
+|---|---|
+| Power BI | Microsoft (Azure, Fabric) |
+| Tableau | Salesforce, cloud-neutral |
+| QuickSight | AWS |
+| Looker | Google Cloud (semantic layer, LookML) |
 
 ---
 
@@ -378,9 +481,13 @@ Q. What is the Bronze layer in Medallion Architecture?
 
 A. (Teacher's definition) Bronze layer - basically a data lake, or "data dumping ground" with no rules, or very few of them.
 
+---
+
 Q. What is the Silver layer?
 
 A. (Teacher's definition) Silver layer - an intermediate layer between bronze and gold, which is used as a place where basic data tables are constructed out of the tables in bronze, which may not have a common format.
+
+---
 
 Q. What is the Gold layer?
 
@@ -396,6 +503,8 @@ Expanded: the three layers form a progressive refinement pipeline, each one clea
 
 This maps directly onto the lakehouse concept above: Bronze/Silver/Gold are typically implemented as three sets of Delta/Iceberg tables sitting on the same object storage, with each layer built by a Spark/ETL job reading the layer beneath it - the same "engine + open table format + object storage" pattern from `Training 4.md`'s Databricks note, just organized into three progressively cleaner stages instead of one flat set of tables. The "NOT ALWAYS" caveat on Gold matters: Gold just means "ready for business use," which doesn't strictly require a dimensional star/snowflake shape - a well-structured normalized table, or even a single wide denormalized table, can also count as Gold if it directly answers the intended business question.
 
+*(Medallion layers also appear in `Training 0.md` and in the later AWS/Databricks days; this table is the main reference.)*
+
 ---
 
 ## Object Store
@@ -404,13 +513,22 @@ Q. What is an Object Store?
 
 A. (Teacher's definition) An object store is a data storage system that's based on the concept of buckets - within a bucket, you have a file structure which is similar to that of a file system, but you can have multiple buckets with multiple structures within them.
 
+Expanded (correction): S3 and GCS do **not** have a real file system inside a bucket. They have a **flat namespace**: each object is stored under a full key such as `bronze/sales/2026/01/part-0001.parquet`, and the "folders" you see in the console are just shared key **prefixes**. Consequences: renaming a "folder" means copying and deleting every object under that prefix, and there are no real directory operations. **ADLS Gen2** is the exception: with the hierarchical namespace enabled it has real directories (atomic rename, directory-level permissions), which is why the naming note below matters.
+
+| Store | Namespace | "Folder" rename |
+|---|---|---|
+| AWS S3 / GCS / Azure Blob | Flat (key prefixes) | Copy + delete every object |
+| ADLS Gen2 (hierarchical namespace) | Real directories | Single atomic metadata operation |
+
+---
+
 Q. How do you typically lay out a lakehouse's Bronze/Silver/Gold layers inside an object store?
 
 A. (Teacher's definition) So to build a lakehouse in an object store, the usual thing is to have:
 - A bronze bucket, a silver bucket, and a gold bucket
 - OR: a bronze bucket, a silver bucket, and the gold layer in a dedicated SQL Data Warehouse platform
 
-Expanded: an object store (S3, ADLS Gen2, GCS - referenced throughout `Training 4.md`) is the "cheap, unstructured storage" layer underneath a lakehouse. A "bucket" is its top-level container - conceptually similar to a filesystem's root folder, except a single account can have many buckets, each with its own independent internal folder/file structure, and buckets don't nest inside each other the way a folder can. Mapping Bronze/Silver/Gold onto buckets is a straightforward, common layout (`s3://bronze/...`, `s3://silver/...`, `s3://gold/...`), but it's not the only option: since Gold is meant to be business-ready analytical data, and a dedicated SQL warehouse (Redshift/Snowflake/BigQuery/Synapse) already does that job well, it's equally common to keep Bronze/Silver as object-store buckets (Delta/Iceberg files, cheap and flexible) and just load the final Gold layer into a proper warehouse product instead of a third bucket - getting the cheap flexible storage where it matters (raw/intermediate data) and the mature SQL/BI tooling where it matters (the layer analysts actually query).
+Expanded: an object store (S3, ADLS Gen2, GCS - referenced throughout `Training 4.md`) is the "cheap, unstructured storage" layer underneath a lakehouse. A "bucket" is its top-level container - conceptually similar to a filesystem's root folder, except a single account can have many buckets, and buckets don't nest inside each other the way a folder can. Inside a bucket, the "folder structure" is only key prefixes (see the correction above), except on ADLS Gen2 with the hierarchical namespace. Mapping Bronze/Silver/Gold onto buckets is a straightforward, common layout (`s3://bronze/...`, `s3://silver/...`, `s3://gold/...`), but it's not the only option: since Gold is meant to be business-ready analytical data, and a dedicated SQL warehouse (Redshift/Snowflake/BigQuery/Synapse) already does that job well, it's equally common to keep Bronze/Silver as object-store buckets (Delta/Iceberg files, cheap and flexible) and just load the final Gold layer into a proper warehouse product instead of a third bucket - getting the cheap flexible storage where it matters (raw/intermediate data) and the mature SQL/BI tooling where it matters (the layer analysts actually query).
 
 **Object stores commonly used today (teacher's list):**
 - **AWS S3**
@@ -444,17 +562,27 @@ Expanded: in the worked example above, `dim_product`/`dim_customer` were joined 
 
 The second row is the big one: surrogate keys are what actually *makes SCD Type 2 possible* - without a warehouse-owned key that's independent of the business key, there'd be no way to have two rows both legitimately represent "customer 42" at different points in time.
 
+**Interview line:** "A natural key comes from the source system, like a customer number. A surrogate key is a meaningless integer the warehouse generates. I use surrogate keys in dimensions so source keys can change or collide without breaking joins, and so SCD Type 2 can keep several versions of the same customer."
+
+---
+
 ## Slowly Changing Dimensions (SCD)
 
 Q. What does SCD stand for?
 
 A. (Teacher's definition) SCD - Slowly Changing Dimensions.
 
+---
+
 ### SCD Type 0
 
 Q. What is SCD Type 0?
 
 A. (Teacher's definition) SCD Type 0 - don't record the change, just overwrite.
+
+Expanded (correction): in the industry-standard (Kimball) numbering, "just overwrite" is **Type 1**. **Type 0** means *retain the original*: the value is never updated after it is first loaded (e.g. original signup date). See the full table below.
+
+---
 
 ### SCD Type 1 vs Type 2
 
@@ -489,7 +617,22 @@ VALUES (DEFAULT, 42, 'Austin', CURRENT_DATE, NULL, TRUE);
 | Query complexity | Simple - one row per entity, always current | Needs `WHERE is_current = TRUE` (or a date-range filter) to get the "as of now" snapshot |
 | Use when... | The old value genuinely doesn't matter (e.g. correcting a typo) | The business needs to answer "what was true *at the time* of a past event" (e.g. "what region was this customer in when they made this purchase") |
 
-**Terminology note on numbering:** the definition captured above for **Type 0** ("don't record the change, just overwrite") matches how *Type 1* is usually defined in most textbooks/industry usage - Type 0 is more commonly defined as the opposite: never update the value at all once loaded, permanently fixed/retained as originally captured (useful for something that truly should never change, like an original signup date). Worth double-checking which convention Evan is using if this comes up in an interview, since Type 0/1 naming isn't perfectly standardized across sources.
+**Terminology note on numbering:** the definition captured above for **Type 0** ("don't record the change, just overwrite") matches how *Type 1* is usually defined in most textbooks/industry usage - Type 0 is more commonly defined as the opposite: never update the value at all once loaded, permanently fixed/retained as originally captured (useful for something that truly should never change, like an original signup date). In an interview, use the industry-standard numbering in the table below.
+
+**All SCD types (industry standard):**
+
+| Type | What happens on change | History kept |
+|---|---|---|
+| 0 - Retain original | Never update; the first value stays forever | None (value is fixed) |
+| 1 - Overwrite | Update the row in place | None |
+| 2 - Add new row | Close the old row (`end_date`, `is_current = FALSE`), insert a new row with a new surrogate key | Full history |
+| 3 - Add new column | Keep a `previous_value` column next to `current_value` | One prior value only |
+| 4 - History table | Current table holds only current values; a separate history table holds the changes | Full history, kept separately |
+| 6 - Hybrid (1+2+3) | Type 2 rows plus a "current value" column overwritten on every row of that entity | Full history plus easy "as of now" reporting |
+
+Expanded: Type 2 is usually implemented with a `MERGE` (or `UPDATE` + `INSERT` as above) that compares incoming rows to the current dimension row, or with dbt snapshots, both covered in later days.
+
+**Interview line:** "Type 1 overwrites, so no history. Type 2 inserts a new row with a new surrogate key and effective/end dates plus an is_current flag, so facts keep pointing at the version that was true at the time. I'd implement Type 2 with a MERGE that expires the current row and inserts the new one, or with dbt snapshots."
 
 ---
 
@@ -508,11 +651,13 @@ Expanded - **how this applies to a data engineering job:** this is the same push
 
 | Social media analogy | Data engineering equivalent |
 |---|---|
-| Push / fan-out-on-write: copy the post into every follower's feed immediately | **ETL** (`Training 0.md`) and materialized Gold-layer tables: pre-compute and pre-join everything at load time, so every downstream query is cheap and fast |
-| Pull / fan-out-on-read: store the post once, followers query for it when they load their feed | **ELT**: load raw data as-is, transform/aggregate at query time - cheap to ingest, but every analytical query pays the join/aggregation cost |
+| Push / fan-out-on-write: copy the post into every follower's feed immediately | Materialized views / materialized Gold tables: pre-compute and pre-join at load time, so every downstream query is cheap and fast |
+| Pull / fan-out-on-read: store the post once, followers query for it when they load their feed | Plain views / querying raw data directly: compute at query time - cheap to store, but every analytical query pays the join/aggregation cost |
+
+Expanded (correction): ETL vs ELT is **not** a clean push/pull pair. ELT does not mean "transform at query time": ELT tools like dbt still build and store transformed tables on a schedule. They just do it *inside* the target warehouse/lakehouse after loading, instead of in a separate engine before loading. The accurate push/pull analogy is materialized tables vs plain views (next list).
 
 Where this trade-off actually shows up on the job:
-- **ETL vs ELT**: transform-before-load (push) vs. transform-at-query-time (pull) - the exact same decision, one level up.
+- **ETL vs ELT**: often described as push vs pull, but see the correction above - both ETL and ELT usually materialize their results.
 - **Materialized views vs. plain views** in a warehouse: a materialized view is fan-out-on-write (computed once, stored, fast to read repeatedly); a plain view recomputes on every read (fan-out-on-read).
 - **CDC broadcast vs. batch polling**: streaming every change event out to many downstream consumers immediately (a Kafka topic with many consumers, later in the syllabus) is push; a nightly batch job that pulls "what changed since last run" is pull.
 - **Data skew / "hot key" problems**: the "Taylor Swift problem" is really a *skew* problem - one entity (a celebrity, or in DE terms one customer/product/partition key) generates wildly more volume than everything else. This is the same issue behind Spark join skew and Kafka partition hot-spotting (later Spark/Kafka days) - a few disproportionately large keys overwhelming one partition/worker while everything else sits idle.
@@ -521,9 +666,100 @@ The interview-relevant takeaway: there's no universally "correct" answer - push 
 
 ---
 
-# Agent Generated Notes
+# SQL Fundamentals (Roadmap Topics)
 
-Content Evan covered live in class that wasn't yet captured above, pulled from the full class transcript.
+*(The class spent this day on warehousing; the core SQL from class is in `Training 4.md`. These short entries cover the roadmap's SQL Fundamentals topics.)*
+
+---
+
+Q. What are the SQL join types?
+
+A.
+
+| Join | Returns |
+|---|---|
+| `INNER JOIN` | Only rows with a match on both sides |
+| `LEFT JOIN` | All left rows; NULLs where the right has no match |
+| `RIGHT JOIN` | All right rows; NULLs where the left has no match |
+| `FULL OUTER JOIN` | All rows from both sides, matched where possible |
+| `CROSS JOIN` | Every combination (left rows x right rows) |
+| Self join | A table joined to itself (e.g. employee to manager) |
+| Anti-join | Left rows with **no** match: `LEFT JOIN ... WHERE b.id IS NULL` or `WHERE NOT EXISTS (...)` |
+| Semi-join | Left rows that **have** a match, each returned once: `WHERE EXISTS (...)` |
+
+Expanded: a LEFT JOIN with a filter on the right table in `WHERE` (e.g. `WHERE b.status = 'x'`) silently becomes an INNER JOIN; put that condition in the `ON` clause instead.
+
+---
+
+Q. What is SQL's logical order of execution?
+
+A. `FROM` -> `JOIN` -> `WHERE` -> `GROUP BY` -> `HAVING` -> `SELECT` (including window functions) -> `DISTINCT` -> `ORDER BY` -> `LIMIT`.
+
+Expanded: this explains common errors: `WHERE` can't use a `SELECT` alias or a window function (they don't exist yet), which is why the "Nth highest" query in `Training 4.md` needs an outer query, while `ORDER BY` can use aliases.
+
+**Interview line:** "SQL is written SELECT-first but runs FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY, LIMIT, so WHERE can't see aliases or window results."
+
+---
+
+Q. Which window functions besides ranking should I know?
+
+A. `LAG`/`LEAD` (previous/next row's value), running totals, and moving averages.
+
+```sql
+SELECT order_date, revenue,
+       revenue - LAG(revenue) OVER (ORDER BY order_date)            AS change_vs_prev_day,
+       SUM(revenue) OVER (ORDER BY order_date
+                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total,
+       AVG(revenue) OVER (ORDER BY order_date
+                          ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)  AS moving_avg_7d
+FROM daily_sales;
+```
+
+---
+
+Q. What are `UNION` vs `UNION ALL`, `CASE WHEN`, and `COALESCE`, and what is the `NOT IN` NULL trap?
+
+A.
+
+| Feature | Meaning |
+|---|---|
+| `UNION` | Stacks results and **removes duplicates** (extra sort/hash cost) |
+| `UNION ALL` | Stacks results and keeps duplicates (faster; use unless you need dedup) |
+| `CASE WHEN ... THEN ... ELSE ... END` | Conditional value per row (bucketing, labels) |
+| `COALESCE(a, b, ...)` | First non-NULL argument (default values) |
+
+Expanded: NULL means "unknown", so `NULL = NULL` is not true (use `IS NULL`). Trap: `WHERE id NOT IN (SELECT id FROM t)` returns **no rows at all** if the subquery returns any NULL. Use `NOT EXISTS` instead.
+
+---
+
+Q. How do you find and delete duplicate rows?
+
+A. Find them with `GROUP BY ... HAVING COUNT(*) > 1`; delete them by numbering each copy with `ROW_NUMBER()` and removing every row numbered above 1.
+
+```sql
+-- Find
+SELECT email, COUNT(*) FROM customers GROUP BY email HAVING COUNT(*) > 1;
+
+-- Delete all but one copy (Postgres)
+DELETE FROM customers
+WHERE ctid IN (
+    SELECT ctid FROM (
+        SELECT ctid, ROW_NUMBER() OVER (PARTITION BY email ORDER BY customer_id) AS rn
+        FROM customers
+    ) AS d
+    WHERE rn > 1
+);
+```
+
+---
+
+Q. What is a recursive CTE?
+
+A. A CTE that refers to itself (`WITH RECURSIVE`), used to walk hierarchies such as employee -> manager chains or category trees: an anchor query plus a recursive part joined with `UNION ALL`, repeated until no new rows appear.
+
+---
+
+# Additional Notes (from class)
 
 ## Data Engineer vs. Data Scientist
 
@@ -551,6 +787,8 @@ Expanded: grain answers "what does one row of this table actually mean?" - a voc
 | Fine | One row per completed order | A single order |
 | Even finer | One row per line item on a receipt | A single product within a single order |
 
+**Interview line:** "Grain is what one row of a fact table represents, like one line item on one receipt. You decide it first because every dimension and measure has to be true at that grain, and mixing grains causes double counting."
+
 ---
 
 ## ETL vs. ELT, Mapped to Warehouse vs. Lakehouse
@@ -560,6 +798,14 @@ Q. Which processing pattern - ETL or ELT - goes with a data warehouse, and which
 A. (Teacher's definition) "For a data warehouse, you'd use an algorithm called ETL, extract, transform, load. For a data lake house, you'd use ELT, which is extract, load, transform. Basically, that means you do the transfer, then you transform it to move it from bronze to silver, then transform it again to go from silver to gold."
 
 Expanded: this gives a concrete, memorable pairing for the more abstract ETL-vs-ELT framing already covered in this file's "Taylor Swift Problem" section - a traditional data warehouse transforms data *before* loading it into the warehouse's strict schema (ETL), while a lakehouse loads raw data into Bronze first, completely unmodified, and only transforms it afterward as it moves Bronze -> Silver -> Gold (ELT). This is exactly why the Bronze layer can tolerate messy, inconsistent data (per the Medallion Architecture section above) - nothing is required to be "clean" until the transform step runs, which happens after loading, not before.
+
+Expanded (correction): "warehouse = ETL, lakehouse = ELT" is an oversimplification. **Both modern cloud warehouses and lakehouses commonly use ELT**: raw data is loaded into Snowflake/BigQuery/Redshift and transformed there with SQL/dbt, the same way a lakehouse transforms Bronze to Silver to Gold. Classic on-premises warehouses (with tools like Informatica/SSIS) used ETL, and ETL is still used when data must be cleaned or masked before it lands. This matches `Training 0.md`.
+
+| | ETL | ELT |
+|---|---|---|
+| Transform where | Separate engine, before loading | Inside the target warehouse/lakehouse, after loading |
+| Typical era/tools | On-prem warehouses, Informatica, SSIS | Cloud warehouses and lakehouses, dbt, Spark on Delta |
+| Used by | Classic warehouses; cases needing pre-load masking | Modern warehouses **and** lakehouses |
 
 ---
 
@@ -596,4 +842,4 @@ A. (Teacher's live definitions - note this phrasing is a bit different from, and
 
 Expanded: Evan himself flagged that he finds this terminology hard to keep straight ("I have looked this up a gazillion times and I never remember it"), and his live phrasing here doesn't map cleanly onto the standard Type 1 = overwrite / Type 2 = new row with history distinction already documented earlier in this file. The concrete example he gave immediately after (a `current_address`/`previous_address` column pair that shifts values forward each time an address changes, keeping one level of history without adding a new row) was presented as a way to track a change *without* a surrogate key - worth asking Evan directly to reconcile this in-class phrasing with the textbook Type 0/1/2 definitions if it comes up again, since (per the existing Terminology note in this file) the numbering isn't perfectly standardized industry-wide in the first place.
 
-
+Expanded (correction): by the standard numbering, the `current_address`/`previous_address` example is **SCD Type 3** (add a "previous value" column: one level of history, no new row). "Create a new column to track the change" is also Type 3. **Type 2** adds a new *row* per change. "Don't record the change, just overwrite" is **Type 1**, not Type 0. See the full SCD table in the SCD section above.

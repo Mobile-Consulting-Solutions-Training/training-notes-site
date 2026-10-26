@@ -62,7 +62,7 @@ Shared during this class. They cover earlier topics: Snowflake (Training 15-16),
 
 Q. What is an AWS Region?
 
-A. (Teacher's definition) *(Evan named the topic; definition not captured yet.)*
+A. A geographic area that contains multiple isolated Availability Zones (data centers). Most resources you create live in one Region.
 
 **Expanded:** A Region is a separate geographic area where AWS has data centers, for example `us-east-1` (N. Virginia) or `eu-west-1` (Ireland). Each Region is split into multiple **Availability Zones (AZs)**: physically separate data centers with their own power and networking, so one failing doesn't take down the others. Most resources you create (EC2 instances, databases) belong to one Region. S3 bucket names are global, but each bucket's data is stored in the one Region you pick.
 
@@ -80,6 +80,8 @@ A. (Teacher's definition) *(Evan named the topic; definition not captured yet.)*
 Q. What is IAM?
 
 A. (Teacher's definition) Identity and Access Management.
+
+In one line: IAM is the AWS service that controls who can do what on which AWS resources.
 
 **Expanded:** IAM is the AWS service that controls **who** (identity) can do **what** (actions) on **which resources**. Every request to AWS, whether from the console, the CLI, or code like a Spark job, is checked against IAM. By default, a new identity can do nothing until a policy allows it.
 
@@ -123,6 +125,52 @@ This allows reading and writing objects in the `company-bronze` bucket and nothi
 **Least privilege:** give each identity only the permissions it actually needs. A pipeline that only reads Bronze and writes Silver should not have access to delete Gold.
 
 **Roles vs access keys:** prefer roles for anything running inside AWS. Access keys are long-lived and can leak (committed to GitHub, for example). Role credentials expire automatically.
+
+---
+
+Q. What is the difference between a role's trust policy and its permissions policy?
+
+A. A **trust policy** says *who* may assume the role. A **permissions policy** says *what* the role may do once assumed.
+
+**Expanded:** Every IAM role has both. When a service or user assumes a role, AWS STS (`sts:AssumeRole`) checks the trust policy, then hands back **temporary credentials** that carry the permissions policy. An **instance profile** is the wrapper that lets an EC2 instance use a role. This is why a Glue role can't simply be reused for EMR Serverless: its trust policy names `glue.amazonaws.com`, not `emr-serverless.amazonaws.com` (Training 20).
+
+| | Trust policy | Permissions policy |
+|---|---|---|
+| Answers | Who can assume this role? | What can this role do? |
+| `Principal` element | Yes (e.g. `"Service": "glue.amazonaws.com"`) | No |
+| Example action | `sts:AssumeRole` | `s3:GetObject` on `arn:aws:s3:::company-silver/*` |
+| Typical error when wrong | The service can't assume the role | `AccessDenied` / `not authorized to perform` |
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "glue.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+**Interview line:** "The trust policy controls who can assume the role, the permissions policy controls what it can do. A Glue job assumes its role through STS and gets short-lived credentials, so no access keys are stored anywhere."
+
+---
+
+Q. How does IAM decide whether a request is allowed?
+
+A. Explicit Deny wins, then explicit Allow, and anything not allowed is implicitly denied.
+
+**Expanded:**
+
+| Order | Rule | Effect |
+|---|---|---|
+| 1 | Any matching **explicit `Deny`** in any policy | Denied, no matter what else allows it |
+| 2 | Otherwise, any matching **explicit `Allow`** | Allowed |
+| 3 | Nothing matches | **Implicit deny** (the default) |
+
+The worked "read/write but not delete" S3 example is in `Training 16.md` ("AWS IAM Policy Example - S3 Bucket Permissions"). Training 20's missing-`/*` error was an implicit deny: the resource ARN didn't match, so nothing allowed the action.
 
 ---
 
@@ -195,6 +243,76 @@ A. (Teacher's definition) Generally when building a data lakehouse, we want to p
 | `company-gold` | Business-level aggregates | Gold jobs write; BI tools and analysts read | Kept current; heavily queried |
 
 **Why separate buckets instead of one bucket with folders:** permissions are simpler to write and harder to get wrong at the bucket level, a mistake in one layer can't wipe out another, and versioning, lifecycle and cost reports can be set per layer.
+
+---
+
+## S3 Versioning, Lifecycle and Security
+
+Q. What do S3 versioning and lifecycle rules do?
+
+A. **Versioning** keeps every version of an object under the same key, so overwrites and deletes can be undone. **Lifecycle rules** automatically move objects to cheaper storage classes or delete them after a set age.
+
+**Expanded:** With versioning on, an overwrite creates a new version and a delete only adds a **delete marker**; the old versions stay (and keep billing) until removed. Once enabled, versioning can only be *suspended*, not turned off. Lifecycle rules are set per bucket (optionally filtered by prefix or tag) and are the usual way to control storage cost in a data lake, for example moving Bronze to Glacier after 90 days and cleaning up old versions. (Storage classes are in the S3 Glacier table further down.)
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "bronze-to-glacier",
+      "Filter": { "Prefix": "orders/" },
+      "Status": "Enabled",
+      "Transitions": [{ "Days": 90, "StorageClass": "GLACIER" }],
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    }
+  ]
+}
+```
+
+Applied with `aws s3api put-bucket-lifecycle-configuration --bucket company-bronze --lifecycle-configuration file://lifecycle.json`.
+
+---
+
+Q. How do you secure an S3 data lake?
+
+A. Block public access, grant least-privilege access through IAM and bucket policies, encrypt the data, keep traffic private, and log access.
+
+**Expanded:**
+
+| Control | What it does |
+|---|---|
+| **Block Public Access** | Account- and bucket-level switch that overrides any policy or ACL making data public. On by default for new buckets |
+| **IAM policy** | Attached to a user/group/role: what *that identity* can do (identity-based) |
+| **Bucket policy** | Attached to the bucket: who can access *this bucket* (resource-based). Can grant other accounts, or deny anything not coming through a VPC endpoint |
+| **SSE-S3** | Server-side encryption with S3-managed keys. The default for all new objects |
+| **SSE-KMS** | Server-side encryption with KMS keys you control. Adds key policies and a CloudTrail record of every key use |
+| **Client-side encryption** | You encrypt before uploading; AWS never sees the plaintext |
+| **VPC gateway endpoint** | Private route from your VPC to S3, no internet (Training 21) |
+| **Lake Formation** | Table-, column- and row-level permissions on top of the Glue Data Catalog |
+| **CloudTrail / access logs** | Audit who read or changed what |
+
+**Interview line:** "I keep Block Public Access on, give each pipeline role least-privilege access to only its layer's prefix or bucket, encrypt with SSE-KMS, reach S3 through a VPC endpoint, and use Lake Formation for table- and column-level access. CloudTrail gives me the audit trail."
+
+---
+
+## AWS CLI Basics
+
+Q. What AWS CLI commands should a data engineer know?
+
+A. The everyday ones are identity checks, S3 listing/copying/syncing, and named profiles.
+
+**Expanded:**
+
+| Command | What it does |
+|---|---|
+| `aws configure --profile company` | Saves keys, default Region and output format under a named profile |
+| `aws sts get-caller-identity` | Shows which identity the CLI is using (first thing to run when something is denied) |
+| `aws s3 ls s3://company-bronze/orders/` | Lists objects under a prefix |
+| `aws s3 cp local.csv s3://company-bronze/orders/` | Uploads (or downloads, if reversed) one file; add `--recursive` for a prefix |
+| `aws s3 sync ./data s3://company-bronze/data/` | Copies only new or changed files |
+| `--profile company` / `export AWS_PROFILE=company` | Picks which set of credentials to use |
+| `--region us-east-2` | Overrides the default Region for one command |
+
+Hands-on setup and the profile errors from class are in `Training 20.md` ("Access Setup").
 
 ---
 
@@ -334,7 +452,7 @@ A. **Hadoop is the software. EMR is an AWS service that runs that software (and 
 
 Q. What does serverless mean?
 
-A. (Teacher's definition) Serverless. *(Evan named the topic; definition not captured yet.)*
+A. You still have servers; you just don't manage them. The provider runs, scales and patches them, and you pay only for what you use. (Evan's explanation is in "Serverless: Evan's Explanation" below.)
 
 **Expanded:** Serverless doesn't mean there are no servers. It means **you never see or manage them**. You don't choose instance types, patch operating systems, or keep machines running. You hand AWS your code or job, AWS provides the compute when it runs, and you pay only for what you use. It's the opposite end of the scale from EC2, where you manage the whole machine.
 
@@ -785,14 +903,14 @@ A. (Teacher's definition) Our best shot at being able to access some level of GP
   - *What is S3 Glacier?* → Long-term, low-cost storage tier of S3 ("every once in a while it is asked about in a job interview").
   - *Glue Crawler vs Glue Data Catalog* → The crawler *finds* the schema; the catalog *stores* it. Evan says many students remember only the crawler, which is "only remembering half."
 - **Glue is common in interviews:** "If you have an AWS project on your profile, there is a high probability that you are going to be asked to talk about Glue."
-- **Goal of today's class:** be able to talk fluently about building cloud architectures. The two reference pipelines Evan described are in the Agent Generated Notes below ("Putting It Together").
+- **Goal of today's class:** be able to talk fluently about building cloud architectures. The two reference pipelines Evan described are in "Putting It Together" below.
 - **Cost discipline:** never leave cloud resources running when you're done. EC2-based services bill for uptime, not use. Evan closed an AWS account over charges that continued after a GPU quota increase.
 
 ---
 
-# Agent Generated Notes (from Class Recording)
+# Additional Notes (from class)
 
-Source: `transcriptions/Training 18 – 2026-10-06 13-07-38/transcript.md` (3h53m, all lecture; the planned demos were mostly a console tour). Items below are things Evan said in class that weren't already in the notes above. Corrections are marked **Accuracy note** where something he said doesn't match how AWS currently works.
+Items below are things Evan said in class that weren't already in the notes above. Each "Extra Points" section extends the main section for that service earlier in this file, so read the two together. Corrections are marked **Accuracy note** where something he said doesn't match how AWS currently works.
 
 ---
 
@@ -1050,7 +1168,7 @@ He called this "fairly simplified." Lambda suits small data. Bigger data belongs
 
 - "A heavily modified version of Apache Spark, which is running as a serverless service."
 - **The two central AWS processing services are EMR and Glue.** EMR runs regular Spark jobs with `spark-submit` and on-premises conventions ("a perfect clone... in a virtual computer"). Glue is "Amazon's own unique take on Spark."
-- **Glue job code structure** (standard Glue boilerplate matching what Evan described in the `bank batch ETL` job; reconstructed from the audio, not read off the screen):
+- **Glue job code structure** (standard Glue boilerplate matching the `bank batch ETL` job Evan showed in class):
 
 ```python
 import sys
@@ -1086,10 +1204,20 @@ Teacher's definition: "MPP stands for Massively Parallel Processing." A parallel
 - Evan expects MPP to outlast even quantum computing: quantum chips would replace silicon chips *inside* an MPP architecture.
 - A student's answer ("breaking tasks into smaller sub-tasks that run at the same time") was "regular distribution of data," not quite MPP. Evan's point is the **scale**: many clusters of nodes connected into one system.
 
+**Expanded (correction):** MPP is not "clusters of clusters." It is a **shared-nothing** database architecture: each node has its own CPU, memory and disk, owns a slice of the data, and runs its part of every query in parallel, with a leader node coordinating. The student's answer was actually closer to the standard definition. Use the definition in the "MPP (Massively Parallel Processing)" section above for interviews.
+
+| | Evan's description | Standard definition |
+|---|---|---|
+| What MPP is | Many master/worker clusters connected together | Many nodes in one shared-nothing system, each owning part of the data |
+| What makes it MPP | Scale (supercomputer-like size) | Each node processes its own data slice in parallel; a leader splits the query and combines results |
+| Examples | - | Redshift, Teradata, Synapse dedicated SQL pools, Greenplum |
+
 ### Why Redshift Went Serverless: BigQuery
 
-- Redshift worked fine as a business "until Google Cloud Platform came on the market." **BigQuery** was GCP's flagship differentiator, started as an internal Google project, and was the first serverless data warehouse. Companies realized it beat "paying those ridiculous fees for something that you can never really turn off" and moved to it, so AWS made Redshift serverless too.
+- Redshift worked fine as a business "until Google Cloud Platform came on the market." **BigQuery** was GCP's flagship differentiator, started as an internal Google project, and was the first serverless data warehouse. Companies realized it beat "paying those ridiculous fees for something that you can never really turn off" and moved to it, so AWS made Redshift serverless too. (This cause-and-effect is Evan's view of the market, not a documented AWS reason.)
 - **The big three clouds:** AWS, Azure, GCP. Oracle Cloud is "a distant fourth"; Apple is absent. Each has a cloud data warehouse. On AWS and GCP it's fully serverless; on Azure, **Databricks** offers a serverless SQL warehouse (Azure's own approach comes later in the course).
+
+**Expanded (correction):** Azure also has its own serverless warehouse options, not only Databricks: **Synapse serverless SQL pools** (pay per TB scanned over files in the lake) and **Microsoft Fabric Warehouse** (capacity-based, no cluster to manage). Azure Databricks serverless SQL warehouses are a third option.
 
 ---
 
@@ -1104,9 +1232,17 @@ Teacher's definition: "MPP stands for Massively Parallel Processing." A parallel
 
 ### OLTP vs OLAP (class Q&A)
 
-Q (Evan): What is OLTP? A (student, accepted): transactional processing: fast, real-time transactions, like a store register. Evan: "Most businesses most of the time in customer-facing applications are using OLTP databases. Every single database you see here [in RDS] is an OLTP database."
+Q. What is OLTP? (Evan asked the class)
 
-Q (student): Is there any current use case for OLAP? A (Teacher): "Redshift. Redshift is an OLAP... data warehouse. BigQuery is also OLAP. Anything else that's a data warehouse is OLAP. So Delta Lake is OLAP. Snowflake is OLAP." OLAP use cases all involve **analytics**, not serving an application. An OLAP database behind a flight search site would make queries slow and drive customers away.
+A. (From class) A student answered: transactional processing: fast, real-time transactions, like a store register. Evan accepted it: "Most businesses most of the time in customer-facing applications are using OLTP databases. Every single database you see here [in RDS] is an OLTP database."
+
+---
+
+Q. Is there any current use case for OLAP? (student question)
+
+A. (Teacher's answer) "Redshift. Redshift is an OLAP... data warehouse. BigQuery is also OLAP. Anything else that's a data warehouse is OLAP. So Delta Lake is OLAP. Snowflake is OLAP." OLAP use cases all involve **analytics**, not serving an application. An OLAP database behind a flight search site would make queries slow and drive customers away.
+
+**Expanded (correction):** Delta Lake is a **table format** (Parquet files plus a transaction log on object storage), not a database. It is *used for* OLAP: the engines that query it (Spark, Databricks SQL, Trino) do the analytical processing.
 
 ---
 
@@ -1123,7 +1259,7 @@ A. (Teacher's definition) "DynamoDB is a serverless NoSQL database."
 | **Table / item / attribute** | Like table / row / column, but items in the same table can have different attributes |
 | **Partition key** | Required; decides which partition stores the item, so lookups by key are very fast |
 | **Sort key** | Optional; orders items that share a partition key (e.g. all orders for one customer by date) |
-| **Global Secondary Index (GSI)** | An alternate key to query by (different partition/sort key). Covered in Training 13 |
+| **Global Secondary Index (GSI)** | An alternate key to query by (different partition/sort key). This is the main GSI entry; Training 13 has only a one-line mention |
 | **Local Secondary Index (LSI)** | Same partition key, different sort key |
 | **Capacity modes** | On-demand (pay per request) or provisioned (set read/write capacity) |
 
@@ -1134,6 +1270,8 @@ A. (Teacher's definition) "DynamoDB is a serverless NoSQL database."
 | Servers | Managed instance you size | Serverless |
 | Scales by | Bigger instance + read replicas | Automatically, horizontally |
 | Best for | Complex queries and relationships | Very fast lookups by key at huge scale |
+
+**Interview line (DynamoDB vs RDS vs Redshift):** "RDS is for an application's relational data with joins and transactions. DynamoDB is for very fast key-based lookups at massive scale when I know my access patterns up front. Redshift is for analytics: big scans and aggregations over history, fed from the other two."
 
 **Accuracy notes:**
 - Evan described DynamoDB as a "column family" database where "columns are all actually stored independently." DynamoDB is a **key-value / document** store. Items are stored together by partition key, not column by column. Column-family databases are **Cassandra** and **HBase**. (The console's grid view just *looks* like columns.)
@@ -1186,5 +1324,5 @@ Evan's goal: by interview time, be able to "talk fluently about building out clo
 ## Homework and Account Access
 
 - **Homework:** a review/research assignment on today's vocabulary, so you can talk about these services fluently in job interviews. **No infrastructure needs to be provisioned on AWS.**
-- **AWS access:** students don't have access to the company AWS account yet; Evan was following up with Ian. If company access isn't possible, the next homework may be to **create a personal AWS account** (free tier available, but a credit card is required). Evan wants to avoid that unless necessary.
+- **AWS access:** students don't have access to the company AWS account yet; Evan was following up with the program coordinator. If company access isn't possible, the next homework may be to **create a personal AWS account** (free tier available, but a credit card is required). Evan wants to avoid that unless necessary.
 - Evan's AWS CLI is tied to his personal account, so command-line demos with the company account are on hold until he gets credentials.

@@ -25,6 +25,8 @@ Coverage: Functions, exceptions, logging, file I/O, JSON/CSV, DataFrames, filter
 | Pandas Getting Started Tutorials | Official beginner-friendly walkthroughs of core Pandas concepts (reading data, selecting subsets, plotting, etc.) | https://pandas.pydata.org/docs/getting_started/intro_tutorials/ |
 | Pandas API Reference | Full official reference for every Pandas function/method (`groupby`, `cut`, `unstack`, `sort_values`, and everything else in the DataFrames section below) - the place to look up exact arguments and behavior | https://pandas.pydata.org/docs/reference/ |
 
+---
+
 # Python Background
 
 Q. What is the difference between compiled and interpreted languages?
@@ -44,9 +46,13 @@ A. Compiled languages translate the entire source code into machine code (binary
 
 Why this matters for Python specifically: Python is interpreted, which is exactly why you can run a script immediately with `python script.py` with no separate build step - but it's also part of why Python is generally slower than a compiled language like C for raw computation. This tradeoff (developer speed/ease vs. raw execution speed) is a big part of why performance-critical Python libraries (NumPy, Pandas) are actually implemented in C/C++ underneath.
 
+---
+
 Q. Java vs Python - what's the difference?
 
-A. | | Java | Python |
+A.
+
+| | Java | Python |
 |---|---|---|
 | Execution model | Compiles to bytecode, run by the JVM (compile + interpret hybrid) | Interpreted directly (with internal bytecode caching, but no separate compile step for the developer) |
 | Typing | Statically typed - variable types declared and checked at compile time | Dynamically typed - types checked at runtime, not declared upfront |
@@ -57,6 +63,18 @@ A. | | Java | Python |
 | Ecosystem relevant here | Spark and Hadoop were originally written in Java/Scala (JVM languages) | PySpark is Python's interface to Spark; Pandas, NumPy for data manipulation |
 
 Why this matters for data engineering: Spark itself runs on the JVM (written in Scala, which compiles to Java bytecode) - that's why Spark has both a native Scala/Java API and a Python API (PySpark). PySpark is genuinely slower in some cases than native Scala/Java Spark code because of the overhead of passing data between the Python process and the JVM - something worth knowing if performance ever comes up in an interview.
+
+Expanded (precise version): For DataFrame and Spark SQL operations, PySpark is just as fast as Scala - your Python code only builds a plan, and the work runs inside the JVM. The slowdown only happens with **Python UDFs and RDD lambdas**, because each row has to be serialized from the JVM to a Python worker and back. Pandas UDFs (Arrow-based, vectorized) cut most of that cost; built-in functions avoid it entirely.
+
+| PySpark code | Runs in | Speed vs Scala |
+|---|---|---|
+| DataFrame/SQL with built-in functions | JVM | Same |
+| Pandas UDF (Arrow) | Python, in batches | Small overhead |
+| Plain Python UDF / RDD lambda | Python, row by row | Much slower |
+
+**Interview line:** "PySpark DataFrame code is as fast as Scala, because it only builds a plan that Catalyst executes in the JVM. The penalty comes from Python UDFs, which serialize every row to Python - so I use built-in functions first, Pandas UDFs second, and plain Python UDFs only as a last resort."
+
+---
 
 Q. Can Python be statically typed?
 
@@ -78,6 +96,8 @@ The key catch: these hints are NOT enforced by Python itself at runtime - callin
 
 Accurate description: Python is dynamically typed, with optional static type checking available via external tools - not statically typed the way Java is, where the compiler itself refuses to build the code if types don't match.
 
+---
+
 Q. Where should Python packages be installed from?
 
 A. PyPI (pypi.org) - the Python Package Index - is the official, trusted source for third-party Python packages. It's the default registry `pip install <package>` pulls from.
@@ -89,6 +109,8 @@ A. PyPI (pypi.org) - the Python Package Index - is the official, trusted source 
 | Why "trusted" matters | Anyone can publish a package to PyPI - always double-check a package name is spelled correctly and matches the real project (typosquatting - malicious packages with names similar to popular ones - is a real supply-chain risk) |
 | Verifying a package | Check the project's PyPI page for download counts, GitHub link, maintainer activity, and recent updates before installing something unfamiliar |
 | Private/internal packages | Companies often run their own private package index (e.g. via Artifactory, AWS CodeArtifact) for internal-only packages, configured as an additional or alternate source for pip |
+
+---
 
 Q. What is threading in Python, and how does it relate to big data processing?
 
@@ -123,6 +145,8 @@ Why this matters for big data specifically: this is exactly why Spark doesn't re
 - This connects to the PySpark <-> JVM overhead already noted in the Java vs Python entry above - a worthwhile tradeoff since the actual parallel computation isn't limited by Python's GIL at all
 
 Bottom line: Python's GIL is a real limitation for pure-Python concurrency, but it's largely irrelevant to Spark's actual distributed processing power, since that parallelism happens at the JVM/cluster/process level (multiple executors, each a separate OS process), not via Python threads within a single process.
+
+---
 
 Q. Worked example: multithreading vs multiprocessing
 
@@ -224,6 +248,87 @@ What to notice in the output: all 3 threads print the **same PID** (same process
 
 ---
 
+# Core Python for Interviews
+
+Q. What is the difference between a list, tuple, set and dict?
+
+A. A list is an ordered, changeable sequence; a tuple is an ordered sequence that can't be changed; a set holds unique values with no order; a dict maps keys to values.
+
+Expanded:
+
+| Type | Syntax | Ordered | Changeable | Duplicates | Lookup speed | Typical use |
+|---|---|---|---|---|---|---|
+| list | `[1, 2, 2]` | Yes | Yes | Yes | O(n) search | Rows to process in order |
+| tuple | `(1, 2)` | Yes | No | Yes | O(n) search | Fixed records, dict keys |
+| set | `{1, 2}` | No | Yes | No | O(1) membership | De-duplicate, "have I seen this ID?" |
+| dict | `{"id": 1}` | Yes (insertion order, Python 3.7+) | Yes | Keys unique | O(1) by key | Lookups, JSON-like records |
+
+**Interview line:** "Lists are ordered and mutable, tuples are ordered and immutable so they can be dict keys, sets give unique values with fast membership checks, and dicts give fast key-value lookup."
+
+---
+
+Q. What are list comprehensions and generators, and why use a generator for big files?
+
+A. A comprehension builds a whole collection in one expression; a generator produces values one at a time, only when asked, so it uses almost no memory.
+
+Expanded:
+```python
+squares = [x * x for x in range(10)]            # list comprehension - all in memory
+evens = {x for x in range(10) if x % 2 == 0}    # set comprehension
+lookup = {r["id"]: r for r in rows}             # dict comprehension
+
+def read_rows(path):                            # generator function
+    with open(path) as f:
+        for line in f:
+            yield line.rstrip("\n").split(",")  # one row at a time
+
+total = sum(1 for _ in read_rows("big.csv"))    # generator expression - constant memory
+```
+
+**Interview line:** "A generator uses `yield` to hand back one item at a time instead of building the whole list, so I can stream a 50 GB file line by line with constant memory."
+
+---
+
+Q. What is a virtual environment and `requirements.txt`?
+
+A. A virtual environment is an isolated folder with its own Python packages, so each project's dependencies don't clash. `requirements.txt` lists the exact packages to install.
+
+Expanded:
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install pandas
+pip freeze > requirements.txt      # record exact versions
+pip install -r requirements.txt    # recreate on another machine / in CI
+```
+pyenv (Training 1) picks the Python *version*; venv isolates the *packages* for one project.
+
+---
+
+Q. `apply` vs vectorized operations, and shallow vs deep copy?
+
+A. Vectorized operations work on a whole column at once in C code; `.apply()` calls a Python function once per row, which is much slower. A shallow copy copies the outer object but shares the nested objects; a deep copy copies everything.
+
+Expanded:
+
+| | Example | Speed |
+|---|---|---|
+| Vectorized | `df["salary"] * 1.05`, `np.where(...)`, `pd.cut(...)` | Fast (C loop) |
+| `.apply()` | `df["salary"].apply(lambda s: s * 1.05)` | Slow (Python loop) |
+
+```python
+import copy
+a = [[1, 2], [3]]
+b = copy.copy(a)        # shallow: b[0] is the same inner list as a[0]
+c = copy.deepcopy(a)    # deep: fully independent
+a[0].append(99)         # b sees the change, c does not
+```
+In Pandas, `df.copy()` is a deep copy by default (`deep=True`).
+
+**Interview line:** "I prefer vectorized Pandas operations over `.apply()`, because they run in C over the whole column; `.apply()` is a Python loop in disguise."
+
+---
+
 # Loops
 
 Q. How do you write a `for` loop and a `while` loop in Python?
@@ -271,7 +376,9 @@ When to use which:
 
 Q. How do you define a function in Python?
 
-A. ```python
+A.
+
+```python
 def function_name(parameter1, parameter2):
     # function body
     result = parameter1 + parameter2
@@ -309,6 +416,8 @@ def describe(**kwargs):           # accepts any number of keyword args
 
 describe(name="Alex", role="student")
 ```
+
+---
 
 # Functional Tools (map, filter, reduce)
 
@@ -351,6 +460,8 @@ doubled = [x * 2 for x in numbers]              # same as map()
 evens = [x for x in numbers if x % 2 == 0]       # same as filter()
 ```
 `reduce` doesn't have as clean a comprehension equivalent, so it still shows up more often, though a simple `sum()` or `for` loop is common for basic cases like the total above.
+
+---
 
 Q. Full worked example: map/filter/reduce on a realistic CSV-based ETL pipeline
 
@@ -519,6 +630,8 @@ Walkthrough of the pipeline shape:
 
 Note: this maps directly onto ETL - step 2 is Extract, steps 3-5 are Transform (type conversion, filtering, business logic), and printing/aggregating the results plays the role of Load/reporting in a small-scale example.
 
+---
+
 # Booleans
 
 Q. Are `True` and `False` case-sensitive in Python?
@@ -534,6 +647,8 @@ false   # NameError: name 'false' is not defined
 ```
 
 This trips people up coming from JavaScript/JSON (`true`/`false`, lowercase) or SQL (`TRUE`/`FALSE`, often case-insensitive) - Python's rule is specifically capitalized, nothing else.
+
+---
 
 # Conditionals
 
@@ -580,6 +695,8 @@ There's also a one-line "ternary" conditional expression for simple cases:
 status = "Adult" if age >= 18 else "Minor"
 ```
 
+---
+
 Q. What is the default case for an `if` chain, and does Python have a `switch` statement?
 
 A. The `else` block is the "default" - it only runs if every `if`/`elif` above it was `False`. It's Python's equivalent of a switch statement's `default` case.
@@ -611,6 +728,8 @@ def describe(day):
 | Default/catch-all | `else` | `case _:` (underscore = wildcard, matches anything) |
 | Availability | All Python versions | Only Python 3.10 and later |
 | Best for | General conditions, ranges, comparisons | Matching against specific values or patterns/shapes of data |
+
+---
 
 Q. What is the equivalency (equality) operator in Python?
 
@@ -644,6 +763,8 @@ a == b   # True  - same values
 a is b   # False - different list objects in memory
 ```
 
+---
+
 # Exceptions & Error Handling
 
 Q. Does Python have `finally`?
@@ -669,6 +790,8 @@ finally:
 `finally` is used for cleanup code that must happen regardless of success or failure - closing a file, releasing a database connection, closing a network socket.
 
 Note: this pattern is already covered in more depth in `Training 0.md`'s "How is error handling implemented in Python?" entry, including a full pandas/CSV example with specific exception types (FileNotFoundError, ValueError, etc.) - see that entry for the complete walkthrough.
+
+---
 
 Q. Worked example: multiple except clauses, raise, and finally together
 
@@ -699,6 +822,8 @@ What actually happens when this runs:
 4. Since the exception was caught (not re-raised), the three `print()` lines after the whole `try` block... **would** normally execute, since the exception was successfully handled - the comments in this example are actually a common misconception worth flagging: catching an exception means the program continues normally afterward, it does NOT skip the rest of the script. Only an *uncaught* exception (or one re-raised inside `except`) would stop execution before reaching those lines.
 
 Note: `except ValueError` and `except Exception` never actually run in this particular example, since `ZeroDivisionError` is raised and caught first - a good illustration of why exception order matters (most specific exceptions first, generic `Exception` last as a catch-all).
+
+---
 
 # Logging
 
@@ -762,9 +887,71 @@ Key things to notice:
 - `%s` placeholders (e.g. `logging.info("Attempting to divide %s by %s", a, b)`) let the logging module handle string formatting itself, rather than pre-formatting with an f-string - this is a small performance win, since the string is only actually built if that log level is enabled
 - Different severity levels used here: `debug` (fine-grained internal detail), `info` (normal progress), `warning` (something recoverable went wrong), `error` (a real failure) - this ties directly to why `logging` is preferred over `print()` in production code (from the Training 0 error handling notes) - you can filter by severity level instead of manually removing/adding print statements
 
+---
+
 # File I/O
 
+Q. How do I read and write files in Python?
+
+A. Use `open()` inside a `with` block (a context manager), which closes the file automatically even if an error happens.
+
+Expanded:
+```python
+from pathlib import Path
+
+with open("data.txt", "r") as f:        # "r" read, "w" overwrite, "a" append
+    for line in f:                       # reads one line at a time - fine for huge files
+        print(line.strip())
+
+with open("out.txt", "w") as f:
+    f.write("hello\n")
+
+p = Path("data") / "sales.csv"          # pathlib builds paths safely on any OS
+print(p.exists(), p.suffix, p.stem)
+```
+
+| Mode | Meaning |
+|---|---|
+| `"r"` | Read (default) |
+| `"w"` | Write - overwrites the file |
+| `"a"` | Append to the end |
+| `"rb"` / `"wb"` | Binary read/write (images, Parquet) |
+
+Why `with` matters: without it, a crash before `f.close()` leaves the file open (locked on Windows, or unflushed data lost).
+
+---
+
 # JSON / CSV
+
+Q. How do I work with JSON and CSV files in Python and Pandas?
+
+A. The standard library has `json` and `csv` modules; Pandas has `read_json`, `read_csv` and `json_normalize` for loading straight into DataFrames.
+
+Expanded:
+
+| Function | What it does |
+|---|---|
+| `json.load(f)` | Read JSON from a file object into Python dicts/lists |
+| `json.loads(s)` | Parse JSON from a string (the "s" = string) |
+| `json.dump(obj, f)` / `json.dumps(obj)` | Write to a file / to a string |
+| `csv.DictReader(f)` | Each row becomes a dict keyed by header (values are strings) |
+| `csv.DictWriter(f, fieldnames=[...])` | Write dicts as rows |
+| `pd.read_csv(path)` | CSV into a DataFrame, types inferred |
+| `pd.read_csv(path, chunksize=100_000)` | Read a big CSV in pieces |
+| `pd.read_json(path, lines=True)` | Newline-delimited JSON into a DataFrame |
+| `pd.json_normalize(records)` | Flatten nested JSON into columns (`address.city`) |
+
+```python
+import json, pandas as pd
+
+with open("users.json") as f:
+    users = json.load(f)                        # list of nested dicts
+df = pd.json_normalize(users)                   # nested keys become columns
+```
+
+**Interview line (CSV bigger than RAM):** "In Pandas I'd read it with `chunksize` and process or aggregate each chunk, or only load the columns I need with `usecols` and smaller dtypes. If it's still too big, I'd switch to a tool built for it - Polars or DuckDB on one machine, or Spark on a cluster."
+
+---
 
 # DataFrames (Pandas)
 
@@ -936,19 +1123,68 @@ salary
 
 This sets up a progression worth remembering for the rest of the course: **plain Python record processing -> Pandas DataFrames/vectorization -> Spark DataFrames/distributed transformations**. Each step trades some manual control for automatic parallelism/optimization over larger data - Pandas vectorizes across your local CPU's columns in memory, and Spark (see Training 0) extends that same DataFrame concept across a distributed cluster.
 
+---
+
 # Filtering
 
-# Joins
+Q. How do I filter rows in a Pandas DataFrame?
 
-# Small ETL Exercise
+A. Build a boolean mask (a True/False Series) and pass it inside `df[...]`.
+
+Expanded: Combine conditions with `&` (and), `|` (or), `~` (not), and wrap each condition in parentheses. Plain `and`/`or` fail with "The truth value of a Series is ambiguous", because Python's `and` expects one True/False, not a whole column.
+
+```python
+active_high = df[(df["active"]) & (df["salary"] >= 70_000)]
+not_hr = df[~(df["department"] == "HR")]
+some = df[df["department"].isin(["Sales", "Finance"])]
+mid = df[df["salary"].between(60_000, 90_000)]
+q = df.query("salary >= 70000 and active")
+```
+
+| Tool | Use |
+|---|---|
+| `isna()` / `notna()` | Find missing values |
+| `dropna(subset=[...])` | Drop rows missing those columns |
+| `fillna(0)` | Replace missing values |
+| `drop_duplicates(subset=[...])` | Remove duplicate rows |
+| `.copy()` | Make an independent copy of a filtered result |
+
+Why `.copy()`: a filtered DataFrame may be a view of the original. Changing it raises `SettingWithCopyWarning`, because Pandas can't tell whether you meant to change the original too. Calling `.copy()` after filtering makes the new DataFrame clearly independent (that is why the Pandas pipeline above uses it).
 
 ---
 
-# Agent Generated Notes
+# Joins
+
+Q. What is the difference between `merge`, `join` and `concat` in Pandas?
+
+A. `merge` joins two DataFrames on column values (like SQL JOIN), `join` joins on the index, and `concat` stacks DataFrames on top of each other or side by side.
+
+Expanded: See the `.merge()` entry in the Pandas Reference section below for the `how` options, and Training 5 for SQL join types.
+
+| Function | Matches on | Like SQL | Example |
+|---|---|---|---|
+| `df.merge(other, on="key", how="left")` | Column values | JOIN | Attach department info to employees |
+| `df.join(other)` | Index | JOIN on the key index | Attach a groupby result indexed by department |
+| `pd.concat([df1, df2])` | Nothing - stacks rows | UNION ALL | Combine January and February files |
+| `pd.concat([df1, df2], axis=1)` | Row position/index | - | Put columns side by side |
+
+---
+
+# Small ETL Exercise
+
+Q. Where is the small ETL exercise?
+
+A. The employee pipeline under "DataFrames (Pandas)" above is the worked ETL example (extract CSV -> convert types -> filter -> transform -> aggregate -> save), and the Pandas homework for this training applies the same pattern. The Pandas Reference section below covers the functions the homework needed.
+
+---
+
+# Pandas Reference (added while doing homework)
 
 *(Concepts below were not covered live in class - added while working through the Pandas homework, since they were needed to solve specific exercises. Flagged here rather than under the main headings above so it's clear which content came from Evan directly vs. filled in afterward.)*
 
-## `pd.cut()` - binning continuous values into labeled categories
+---
+
+Q. `pd.cut()` - binning continuous values into labeled categories
 
 **Docs:** [pandas.cut — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.cut.html)
 
@@ -960,7 +1196,13 @@ pd.cut(series, bins=[...], labels=[...])
 ```
 - `bins` is a list of boundary numbers (edges). If you have N labels, you need N+1 edges - each label describes the gap *between* two consecutive edges.
 - `labels` is what each resulting bucket should be called.
-- Bins are edge-exclusive on the low end and inclusive on the high end by default - a value sitting exactly on a boundary falls into the *upper* bucket. This matters when translating a requirement like "under 70,000 is Low, 70,000+ is Medium" into edges: setting the edge at `69_999` (not `70_000`) guarantees a salary of exactly 70,000 lands in "Medium," matching the wording precisely.
+- Bins are edge-exclusive on the low end and inclusive on the high end by default - intervals look like `(a, b]`. So a value sitting exactly on a boundary falls into the *lower* bucket: with an edge at `70_000`, a salary of exactly 70,000 lands in `(.., 70000]` ("Low"). That is why setting the edge at `69_999` puts 70,000 in "Medium" - it works for whole-number salaries, but it would misfile a float like 69,999.50. The clean fix for "under 70,000 is Low, 70,000+ is Medium" is `right=False`, which makes the intervals `[a, b)`:
+
+```python
+pd.cut(df["salary"], bins=[0, 70_000, 90_000, float("inf")],
+       labels=["Low", "Medium", "High"], right=False)
+# 70,000 -> "Medium", 69,999.50 -> "Low"
+```
 
 **Small example:**
 ```python
@@ -983,7 +1225,9 @@ groups = pd.cut(
 | Apply row-by-row with `.apply()` | Vectorized across the whole column |
 | Easy to mismatch a boundary | Edges are explicit and centralized in one place |
 
-## `.unstack()` - reshaping a grouped result from "long" to "wide"
+---
+
+Q. `.unstack()` - reshaping a grouped result from "long" to "wide"
 
 **Docs:** [pandas.DataFrame.unstack — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.unstack.html)
 
@@ -1018,7 +1262,9 @@ This is **"wide" format** - one row per department, one column per category, eas
 
 **Rule of thumb:** whenever a `groupby()` uses two or more columns and the result should read like a spreadsheet grid instead of a tall stacked list, `.unstack()` is the reshaping tool for long -> wide.
 
-## `observed=True` - avoiding phantom groups on categorical columns
+---
+
+Q. `observed=True` - avoiding phantom groups on categorical columns
 
 `pd.cut()` doesn't return a plain string column - it returns a special `Categorical` dtype that secretly remembers the *entire list of possible categories* (e.g. `Low, Medium, High, Very High`), not just the ones present in the data.
 
@@ -1026,7 +1272,9 @@ By default, grouping by a categorical column makes Pandas generate a group for *
 
 `observed=True` tells `groupby()` to only create groups for combinations that **actually appear** in the data, skipping the phantom ones. Since the true zeros are already being filled in afterward via `unstack(fill_value=0)`, there's no need for Pandas to manufacture the empty combinations itself - same correct final result, without the extra overhead or the warning.
 
-## `.value_counts()` - counting occurrences of each unique value
+---
+
+Q. `.value_counts()` - counting occurrences of each unique value
 
 **Docs:** [pandas.Series.value_counts — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.Series.value_counts.html)
 
@@ -1042,7 +1290,9 @@ data_frame["department"].value_counts()
 
 **How it relates to `groupby().size()`:** functionally similar to `groupby("department").size()` from the salary-bands exercise, but `value_counts()` is a shortcut for the common case of counting one column's values - no need to spell out `groupby()` + `.size()` when there's only one column involved and you don't need a multi-column grid.
 
-## `.idxmax()` - finding which row/label holds the maximum value
+---
+
+Q. `.idxmax()` - finding which row/label holds the maximum value
 
 **Docs:** [pandas.Series.idxmax — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.Series.idxmax.html)
 
@@ -1058,7 +1308,9 @@ counts.max()      # -> 6 (the value itself)
 
 If multiple entries are tied for the maximum, `.idxmax()` returns the *first* one it encounters, not all of them.
 
-## `.rank()` - assigning each row a rank number within its group
+---
+
+Q. `.rank()` - assigning each row a rank number within its group
 
 **Docs:** [pandas.Series.rank — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.Series.rank.html)
 
@@ -1087,9 +1339,13 @@ exercise5_df["salary_rank"] = (
 | `"first"` | `[2, 1, 3, 4]` | Ties broken by order of appearance in the data (no ties in the output) |
 | `"dense"` | `[2, 1, 2, 3]` | Like `"min"`, but the next rank always increases by exactly 1 (no skipped numbers) |
 
+SQL equivalents (see Training 4 and Training 21 for window functions): `method="min"` = `RANK()`, `method="dense"` = `DENSE_RANK()`, `method="first"` = `ROW_NUMBER()`.
+
 `method="min"` was the right choice for exercise 5: if two employees in the same department are tied for the highest salary, both should correctly show as rank 1 (not an arbitrary 1-and-2 split), and the next distinct salary becomes rank 3 - correctly reflecting that two people already hold the top spot.
 
-## `.merge()` - joining two DataFrames on a shared column
+---
+
+Q. `.merge()` - joining two DataFrames on a shared column
 
 **Docs:** [pandas.DataFrame.merge — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.merge.html)
 
@@ -1114,7 +1370,9 @@ exercise6_df = data_frame.merge(department_info, on="department", how="left")
 
 `how="left"` was the right choice for exercise 6: the goal is "every employee record also contains their manager and office location" - meaning no employee row should ever be dropped just because of the join, even if (hypothetically) a department had no matching row in `department_info`. `"left"` guarantees the full employee list survives; `"inner"` could silently drop employees if a department name were ever missing or misspelled in one of the two tables.
 
-## `sort_values()` - reordering a DataFrame's rows
+---
+
+Q. `sort_values()` - reordering a DataFrame's rows
 
 **Docs:** [pandas.DataFrame.sort_values — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.sort_values.html)
 
@@ -1142,7 +1400,9 @@ Sales         80000
 ```
 Engineering sorts before Sales (alphabetical), and within each department, the higher salary appears first (descending).
 
-## Standard deviation (statistics background for `.transform("std")`)
+---
+
+Q. Standard deviation (statistics background for `.transform("std")`)
 
 Standard deviation measures how spread out a set of numbers is around their average. A *small* standard deviation means values cluster close to the mean; a *large* one means they're scattered widely above and below it.
 
@@ -1153,13 +1413,17 @@ Standard deviation measures how spread out a set of numbers is around their aver
 4. Average those squared deviations - this is called the **variance**.
 5. Take the square root of the variance - that's the standard deviation, back in the original units.
 
+Note: dividing by n in step 4 gives the *population* variance. Pandas `.std()` defaults to the *sample* standard deviation (`ddof=1`, divides by n-1), while NumPy `np.std()` defaults to `ddof=0` (divides by n). That is why the two can give slightly different numbers for the same data - pass `ddof` explicitly when they must match.
+
 **Example:** Department A salaries `[60000, 62000, 58000]` - all close together -> small standard deviation. Department B salaries `[40000, 60000, 100000]` - same rough average, but widely scattered -> much larger standard deviation, even with a similar mean.
 
-**Why "mean + 1 standard deviation" is a meaningful outlier threshold:** it's a standard statistical convention - for many real-world distributions, most values cluster within one standard deviation of the mean, so "more than one standard deviation above the mean" is a widely-used, non-arbitrary definition of "unusually high" relative to a specific group.
+**Why "mean + 1 standard deviation" was the threshold here:** it was the homework's chosen cutoff for "above the group's typical range". It is not a standard outlier rule: in a normal distribution about 16% of values are above +1 standard deviation, so they are not unusual. Common outlier rules are a z-score above 2 or 3 (more than 2-3 standard deviations from the mean), or the IQR rule (below Q1 - 1.5 x IQR or above Q3 + 1.5 x IQR).
 
 **In Pandas**, `"std"` is just another built-in aggregation function name, usable anywhere `"mean"` or `"count"` are (inside `.agg()`, `.transform()`, or called directly as `.std()`) - the statistics are the interesting part here, not new Pandas syntax.
 
-## Named aggregation - multiple stats, multiple source columns, one `.agg()` call
+---
+
+Q. Named aggregation - multiple stats, multiple source columns, one `.agg()` call
 
 **Docs:** [Named aggregation — pandas user guide](https://pandas.pydata.org/docs/user_guide/groupby.html#named-aggregation)
 
@@ -1174,7 +1438,9 @@ department_report = data_frame.groupby("department").agg(
 ```
 Each line follows the pattern `new_column_name = ("source_column", "function_name")` - the left side is a name you choose for the output column, the right side is a tuple of (which column to read from, which aggregation to apply). `active_employee_count=("active", "sum")` is a useful trick: summing a `True`/`False` column counts the `True` values, since Python treats `True` as `1` and `False` as `0` in arithmetic.
 
-## `.reset_index()` - turning a groupby's index back into a normal column
+---
+
+Q. `.reset_index()` - turning a groupby's index back into a normal column
 
 **Docs:** [pandas.DataFrame.reset_index — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.reset_index.html)
 
@@ -1182,7 +1448,9 @@ Each line follows the pattern `new_column_name = ("source_column", "function_nam
 
 **Why it matters:** operations like `.merge()` join on regular *columns*, not on the index. If `department` is still sitting as the index after a `groupby()`, `.merge(..., on="department")` won't find it - `.reset_index()` needs to run first so `department` is a real column again.
 
-## `.loc[]` - selecting rows by label
+---
+
+Q. `.loc[]` - selecting rows by label
 
 **Docs:** [pandas.DataFrame.loc — pandas documentation](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.loc.html)
 
@@ -1195,4 +1463,3 @@ highest_paid_names = data_frame.loc[idx_of_max_salary, ["department", "name"]]
 `idx_of_max_salary` is a collection of specific row labels - one per department, each pointing at that department's highest-salary row (from `.idxmax()`, grouped). `.loc[idx_of_max_salary, ["department", "name"]]` jumps directly to exactly those rows and pulls out just the `department` and `name` columns from each one - turning "the row label of the maximum" into "the actual name sitting at that row."
 
 **`.loc[]` vs `.iloc[]`** (not used in this homework, but worth knowing the distinction): `.loc[]` selects by label/index value; `.iloc[]` selects by integer position (0, 1, 2...) regardless of what the labels actually are. They can give different results whenever a DataFrame's index isn't just a simple 0,1,2... sequence - such as right after using `.idxmax()` results, or after filtering rows (which keeps the original row labels rather than renumbering them).
-

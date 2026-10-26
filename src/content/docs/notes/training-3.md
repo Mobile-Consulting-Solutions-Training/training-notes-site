@@ -10,9 +10,7 @@ Teacher: Evan Flint
 Syllabus Day 4: Git Workflow
 Coverage: Branching, commits, PRs, merge conflicts, code review, repository discipline and release basics.
 
-## Video Resources
-
-## References
+---
 
 # Git Background
 
@@ -45,6 +43,8 @@ A. (Shared by the teacher) GitHub, GitLab, and Bitbucket - the three most widely
 
 **Bottom line:** Git itself (branching, commits, merging - the actual version control mechanics covered in the rest of this training) is identical no matter which of these hosts it - GitHub/GitLab/Bitbucket are hosting services built *around* Git, adding remote storage, pull/merge request workflows, CI/CD pipelines, issue tracking, and access control on top of the core tool. The real decision between them comes down to team/organizational context: existing tool ecosystem (Atlassian shop -> Bitbucket), CI/CD philosophy (want it built-in and native -> GitLab), or default/most-common choice with the largest community (GitHub). This project's own site (`training-notes-site`) is hosted on GitHub via GitHub Pages.
 
+---
+
 # Branching
 
 Q. What is Git Flow, and what are the standard branch types?
@@ -75,6 +75,26 @@ git branch -D feature/my-work     # force-delete a branch (even if unmerged - us
 ```
 
 `checkout` is the older, multi-purpose command (also used for restoring files); `switch` and `restore` were introduced later specifically to split those two responsibilities apart and reduce confusion - both are seen in real codebases, so it's worth recognizing both.
+
+---
+
+Q. Git Flow vs trunk-based development - which branching strategy should a team use?
+
+A. Git Flow uses long-lived `develop`/`release` branches and scheduled releases; trunk-based development has everyone merge small, short-lived branches into `main` at least daily, hiding unfinished work behind feature flags.
+
+Expanded:
+
+| | Git Flow | Trunk-based |
+|---|---|---|
+| Long-lived branches | `main` + `develop` (+ `release/*`, `hotfix/*`) | Only `main` |
+| Feature branch life | Days to weeks | Hours to a day or two |
+| Releases | Planned, versioned releases | Continuous deployment from `main` |
+| Unfinished work | Stays on its branch | Merged behind a feature flag |
+| Fits | Versioned products, slower release cycles | CI/CD-heavy teams, most modern SaaS and data platforms |
+
+**Interview line:** "Most teams I'd expect today use trunk-based development or a light GitHub Flow: short-lived feature branches, a PR with CI and one approval, then merge to `main`, which deploys automatically. Git Flow still makes sense when you ship versioned releases and need to support several versions at once."
+
+---
 
 Q. What is `git worktree`, and why use it instead of just switching branches?
 
@@ -140,11 +160,22 @@ Now `myapp/` still has `feature/new-pipeline` with all its unfinished changes co
 | Disk usage | Minimal | Small (shares objects) | Full duplicate |
 | Common use case | Everyday single-branch work | Quick parallel work without disturbing in-progress changes | Rare - usually worktrees are preferred now |
 
+---
+
 # Commits
 
 Q. What are the core Git commands for tracking and saving changes?
 
 A. Foundation review of the everyday Git command set:
+
+Expanded - the three areas every command moves changes between:
+
+| Area | What lives there | Moved there by |
+|---|---|---|
+| Working directory | The files you're editing | Editing, `git restore`, `git checkout` |
+| Staging area (index) | Changes chosen for the next commit | `git add` |
+| Local repository | Commits (history) in `.git` | `git commit` |
+| Remote repository | The shared copy (GitHub) | `git push` (and `git fetch`/`pull` to bring it back) |
 
 ```bash
 git init                  # turn the current folder into a new Git repository
@@ -160,7 +191,100 @@ git diff --staged          # show staged changes compared to the last commit
 
 Key concept - the staging area: `git add` doesn't commit anything yet - it moves changes into a middle "staging" step. This lets you build a commit out of only *some* of your changed files/lines, rather than being forced to commit everything you've touched at once. `git commit` then saves whatever is currently staged as a permanent snapshot in the project's history.
 
-Commit message convention: a short, present-tense summary line (e.g. "Add user authentication" not "Added" or "Adding"), optionally followed by a blank line and a longer explanation of *why* the change was made if it's not obvious from the diff itself - this mirrors the "explain the why, not the what" principle, since the diff already shows what changed.
+Commit message convention: a short summary line in the imperative mood, as if completing the sentence "If applied, this commit will..." (e.g. "Add user authentication" not "Added" or "Adding"), optionally followed by a blank line and a longer explanation of *why* the change was made if it's not obvious from the diff itself - this mirrors the "explain the why, not the what" principle, since the diff already shows what changed.
+
+---
+
+# Core Git Operations
+
+Q. What is the difference between `git merge` and `git rebase`?
+
+A. Both bring changes from one branch into another. `merge` keeps both histories and adds a merge commit; `rebase` replays your commits on top of the other branch, creating new commits and a straight-line history.
+
+Expanded:
+```bash
+git switch feature/login
+git merge main        # adds a merge commit; existing commits unchanged
+git rebase main       # rewrites feature/login's commits on top of main's latest commit
+git rebase --abort    # give up mid-rebase and go back
+```
+
+| | Merge | Rebase |
+|---|---|---|
+| History | Keeps the true, branching history | Linear, as if work started from the latest `main` |
+| Commit IDs | Unchanged | Rewritten (new hashes) |
+| Extra commit | Merge commit | None |
+| Safe on shared branches | Yes | No - only on your own, unpushed (or solo) branch |
+
+Golden rule: never rebase a branch other people have already pulled, because rewriting its commits breaks their copies.
+
+**Interview line:** "Merge preserves history and adds a merge commit; rebase rewrites my commits on top of the target to keep history linear. I rebase my own local feature branch to stay up to date, but I never rebase a shared branch - for anything already pushed and shared, I merge."
+
+---
+
+Q. How do I undo a commit - `git reset` vs `git revert`?
+
+A. `git reset` moves the branch pointer back, removing commits from history; `git revert` adds a new commit that undoes an earlier one, leaving history intact.
+
+Expanded:
+
+| Command | HEAD/branch | Staging area | Working files | Use when |
+|---|---|---|---|---|
+| `git reset --soft HEAD~1` | Moves back 1 | Keeps the changes staged | Unchanged | Redo the last commit message or content |
+| `git reset --mixed HEAD~1` (default) | Moves back 1 | Unstaged | Unchanged | Un-commit and re-pick what to stage |
+| `git reset --hard HEAD~1` | Moves back 1 | Cleared | Changes deleted | Throw local work away (dangerous) |
+| `git revert <commit>` | New commit added | - | Updated by the new commit | Undo something already pushed |
+
+**Interview line:** "If the commit is already pushed, I use `git revert`, which adds a new commit that undoes it without rewriting shared history. `git reset` is for local commits nobody else has - `--soft` keeps my changes staged, `--hard` throws them away."
+
+---
+
+Q. What is the difference between `git fetch` and `git pull`?
+
+A. `git fetch` downloads new commits from the remote but doesn't change your branch; `git pull` is `fetch` plus a merge (or a rebase with `git pull --rebase`) into your current branch.
+
+Expanded:
+```bash
+git fetch origin                 # update origin/main etc., your files untouched
+git log main..origin/main        # see what's new before taking it
+git pull                         # fetch + merge into the current branch
+git pull --rebase                # fetch + rebase your local commits on top
+```
+
+---
+
+Q. What are `git stash` and `git cherry-pick`?
+
+A. `git stash` saves uncommitted changes aside and cleans the working directory; `git cherry-pick` copies one specific commit from another branch onto the current branch.
+
+Expanded:
+
+| Command | What it does |
+|---|---|
+| `git stash` | Shelve uncommitted changes (`-u` also includes untracked files) |
+| `git stash list` | Show saved stashes |
+| `git stash pop` | Re-apply the latest stash and remove it from the list |
+| `git stash apply` | Re-apply but keep it in the list |
+| `git cherry-pick <commit>` | Apply that one commit here as a new commit |
+
+Typical cherry-pick use: a hotfix committed on `main` is cherry-picked onto `develop` (or a release branch) so the fix isn't lost.
+
+---
+
+Q. How do I clone a repo, connect a remote, and push a new branch?
+
+A. `git clone` copies a remote repository locally; `git remote` manages the names of remotes (usually `origin`); `git push -u origin <branch>` pushes a branch and sets it to track the remote one.
+
+Expanded:
+```bash
+git clone https://github.com/<user>/<repo>.git    # copy a repo; remote "origin" is set up
+git remote -v                                     # list remotes and their URLs
+git remote add origin <url>                       # connect a repo created with git init
+git push -u origin feature/my-work                # first push; -u sets upstream tracking
+git push                                          # later pushes - upstream already known
+```
+
+---
 
 # Pull Requests
 
@@ -204,6 +328,8 @@ A. (Foundation review) A pull request is a request to merge one branch's changes
 
 There's no universally "correct" choice - teams pick one convention and stick with it consistently across the whole repository.
 
+---
+
 # Merge Conflicts
 
 Q. What do Git's merge conflict markers mean, and how do you resolve one?
@@ -245,6 +371,15 @@ VERSION = "2.0.0"
 ```
 The resolution doesn't have to be strictly "pick one side" - it's also valid to write something that combines or replaces both sides entirely, as long as every marker line is removed and the file is left in a valid, working state before committing.
 
+Expanded - avoiding and escaping conflicts:
+- Avoid them: pull/rebase from `main` often, keep PRs small and branches short-lived, and don't reformat whole files in the same PR as a logic change.
+- Escape them: `git merge --abort` or `git rebase --abort` returns to the state before you started. During a rebase, after fixing a file run `git add <file>` then `git rebase --continue`.
+- `git status` always lists which files are still in conflict.
+
+**Interview line:** "A merge conflict happens when two branches change the same lines and Git can't decide which to keep. I open the conflicted files, pick or combine the correct code between the markers, remove the markers, run the tests, then `git add` and commit - or `git merge --abort` if I need to back out."
+
+---
+
 # Code Review
 
 Q. What do reviewers actually look for in a code review, and how should feedback be given/received?
@@ -274,6 +409,8 @@ A. (Foundation review) Code review is the practice of having at least one other 
 **Receiving review feedback:** it's about the code, not a judgment of the author - the goal on both sides is a better final result, not defending the original approach. Responding to every comment (even just "done" or "good point, fixed in the latest commit") helps the reviewer know what's been addressed without re-reading the whole diff from scratch.
 
 **Why code review matters as a practice:** beyond catching bugs, it spreads knowledge of the codebase across the team (so no single person is the only one who understands a given piece of code), and it keeps a consistent style/quality bar across contributions from different people over time.
+
+---
 
 # Repository Discipline
 
@@ -312,6 +449,8 @@ Once a file is already tracked, adding it to `.gitignore` alone doesn't untrack 
 | `chore/*` | Maintenance work with no functional change (dependency bumps, config, cleanup) |
 | `docs/*` | Documentation-only changes |
 
+---
+
 # Release Basics
 
 Q. How does a team actually cut and track a new release?
@@ -339,7 +478,11 @@ Annotated tags are generally preferred for actual releases, since they carry met
 
 **How this connects to the rest of the pipeline:** a `release/*` branch (from Branching) is where final testing and bug-fixing for an upcoming version happens; once it's ready, it merges into `main`, gets tagged with its SemVer number, and - per the CI/CD three-environments concept from `Training 0.md` - that tagged commit is what actually gets deployed through Testing/QA and out to Production, with the tag serving as the permanent record of exactly which snapshot of the code is live.
 
+---
+
 # CI/CD Pipeline Stages
+
+*(CI/CD is the Syllabus Day 5 topic - see Training 4 for CI/CD for data engineering. The material below was shared on the Git day and is kept here.)*
 
 Q. What are the standard stages a CI/CD pipeline runs through?
 
@@ -357,9 +500,11 @@ A. (Shared by the teacher) The typical sequence, in order, from a push to a depl
 
 **Why this exact order:** cheap/fast checks run before expensive/slow ones, so the pipeline fails fast - there's no point running a 10-minute integration test suite against code with a linting error. This sequence is the concrete mechanism behind "protected branches require passing CI before merge" from the Repository Discipline section above - "CI" specifically means this stage sequence running automatically against every PR.
 
+---
+
 Q. How do you actually write a test in Python, for the Unit Test / Integration Test stages above?
 
-A. Two main tools: `unittest` (Python's built-in standard library module, no install needed) and `pytest` (a third-party tool, `pip install pytest`, and the far more widely used option today - this is what the Jenkinsfile example above used).
+A. Two main tools: `unittest` (Python's built-in standard library module, no install needed) and `pytest` (a third-party tool, `pip install pytest`, and the far more widely used option today - this is what the Jenkinsfile example below uses).
 
 A function to test:
 ```python
@@ -406,6 +551,8 @@ Run with `python -m unittest test_math_utils.py`.
 **Naming conventions that let test runners auto-discover tests:** files named `test_*.py` or `*_test.py`, functions starting with `test_`, classes starting with `Test` - both tools rely on this naming pattern to find and run tests automatically, without them needing to be listed anywhere by hand.
 
 **Unit vs integration, in concrete code terms:** a unit test calls something like `add()` directly, with no outside dependencies involved at all. An integration test instead calls something like `save_user_to_database(user)` and checks that a real (or test) database was actually updated correctly - verifying multiple real pieces work together, which is exactly what an isolated unit test can't catch.
+
+---
 
 # CI/CD Tooling: Jenkins
 
@@ -493,6 +640,8 @@ pipeline {
 | Manual | A person clicks "Build Now" in the Jenkins UI |
 
 **Plugins:** most of Jenkins' real functionality (Git integration, Docker support, Slack/email notifications, cloud provider integrations) comes from an extensive plugin ecosystem rather than Jenkins' own core - part of why Jenkins is often described as extremely flexible but also as sometimes needing significant setup/maintenance work compared to newer, more opinionated CI/CD tools built directly into a hosting platform (GitHub Actions, GitLab CI).
+
+---
 
 # Docker Hub & Image Deployment
 

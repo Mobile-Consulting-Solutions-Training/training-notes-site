@@ -10,21 +10,133 @@ Teacher: Evan Flint
 Syllabus Day 5: CI/CD for Data Eng.
 Coverage: Build/test/deploy flow, pipeline YAML, PR validation, environments, secrets, rollback and patterns.
 
+---
+
 ## Video Resources
 
 ## References
 
+*(Class drift note: the CI/CD material for this day was taught in `Training 3.md` (Jenkins, pytest, Docker Hub). This class session itself covered PostgreSQL SQL and the data warehouse intro further down. The short CI/CD entries below fill the roadmap topics for interview prep.)*
+
+---
+
 # CI/CD Fundamentals
+
+Q. What is CI/CD, and what is the difference between continuous delivery and continuous deployment?
+
+A. **CI (Continuous Integration)** means every push or pull request automatically builds the code and runs the tests, so broken changes are caught before they merge. **CD** means the tested build is automatically packaged and promoted toward production. In **continuous delivery** every change is *ready* to release, but a human approves the production step; in **continuous deployment** every change that passes the pipeline goes to production with no manual gate.
+
+Expanded: for data engineering, the "code" includes pipeline code (PySpark, SQL, dbt models), infrastructure (Terraform), and orchestration definitions (DAGs). The tests include unit tests on transformation functions, SQL/data-quality checks, and linting. See `Training 3.md` for the Jenkins pipeline, pytest, and Docker Hub flow built in class.
+
+| | Continuous Integration | Continuous Delivery | Continuous Deployment |
+|---|---|---|---|
+| Trigger | Every push / PR | Every merge to main | Every merge to main |
+| What happens | Build + automated tests | Build, test, package, deploy to staging | Build, test, package, deploy to prod |
+| Manual gate to prod? | n/a | Yes (approval) | No |
+
+**Interview line:** "CI runs build and tests on every change so main is always green. Continuous delivery keeps every build releasable with a manual approval to prod; continuous deployment removes that gate."
+
+---
 
 # Pipeline YAML & Build/Test/Deploy Flow
 
+Q. What does a CI pipeline definition (e.g. GitHub Actions YAML) look like, and what are its key parts?
+
+A. A pipeline is declared as code in the repo. In GitHub Actions it lives in `.github/workflows/<name>.yml`: `on:` says what triggers it, `jobs:` groups work that runs on a runner, `steps:` are the commands inside a job, `uses:` pulls in a prebuilt action, and `secrets.*` injects credentials stored outside the repo.
+
+```yaml
+name: ci
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+
+  deploy:
+    needs: test                     # only runs if tests pass
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod               # can require a manual approval
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./deploy.sh
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+```
+
+Expanded: the flow is always **build -> test -> package -> deploy**, and each stage only runs if the previous one passed (`needs:` above). The same shape exists in Jenkins (`Jenkinsfile` stages, see `Training 3.md`), GitLab CI (`.gitlab-ci.yml`), and Azure DevOps (`azure-pipelines.yml`).
+
+| Stage | Data engineering example |
+|---|---|
+| Build | Install dependencies, build a Docker image or a Scala JAR (`sbt assembly`) |
+| Test | `pytest` on transformation functions, `dbt test`, SQL lint (sqlfluff) |
+| Package | Push image to a registry (Docker Hub/ECR), upload artifact to S3 |
+| Deploy | Update the Glue job / Airflow DAG / Terraform apply in the target environment |
+
+---
+
 # PR Validation
+
+Q. What is PR validation?
+
+A. PR validation is a CI run that is triggered by a pull request and must pass before the PR can be merged. Combined with branch protection rules (required status checks, required reviewers), it keeps broken code out of `main`.
+
+Expanded: typical PR checks for a data repo are unit tests, linting/formatting, `dbt build` against a dev or CI schema, `terraform plan` (posted as a PR comment so reviewers see what infrastructure would change), and sometimes a small sample-data run of the pipeline.
+
+---
 
 # Environments
 
+Q. Why do data teams use dev / test (staging) / prod environments?
+
+A. So changes are tried against non-production data and resources before they touch the systems the business relies on. Each environment has its own databases/buckets/credentials, and the same code is promoted from one to the next.
+
+| Environment | Purpose | Data |
+|---|---|---|
+| dev | Individual development and experiments | Sample or synthetic data |
+| test / staging | Integration testing, mirrors prod config | Copy or masked subset of prod |
+| prod | Serves real users and reports | Real data |
+
+Expanded: the code should be identical across environments; only configuration differs (connection strings, bucket names, warehouse sizes), passed in as variables or parameters. Training 0 covers the same idea from the Git branching side.
+
+---
+
 # Secrets Management
 
+Q. How should a pipeline handle secrets (passwords, API keys)?
+
+A. Never commit them to the repo. Store them in a secrets manager (GitHub Actions secrets, AWS Secrets Manager / SSM Parameter Store, Azure Key Vault, Jenkins credentials) and inject them at runtime as environment variables. For cloud access from CI, prefer short-lived credentials via OIDC federation (the CI job assumes an IAM role) instead of long-lived access keys.
+
+Expanded: if a secret is ever committed, rotate it immediately; deleting the commit is not enough because it stays in Git history and forks. Add a `.gitignore` for `.env` files and a secret scanner (e.g. GitHub secret scanning, gitleaks) to PR validation.
+
+---
+
 # Rollback & Recovery Patterns
+
+Q. What are common rollback and recovery patterns for a deployment?
+
+A. Redeploy the previous known-good version (a tagged release or image), or use a release strategy that makes rollback cheap: blue/green, canary, or feature flags. For data, recovery also means restoring the data itself.
+
+| Pattern | How it works |
+|---|---|
+| Redeploy previous tag | CI re-runs the deploy for the last good version/image |
+| Blue/green | Two identical environments; switch traffic to the new one, switch back if it fails |
+| Canary | Send a small share of traffic/data to the new version first, then widen |
+| Feature flag | Ship the code turned off; enable or disable it without a redeploy |
+| Data rollback | Delta Lake / Snowflake time travel, table snapshots, or re-running an idempotent pipeline for the affected dates |
+
+**Interview line:** "Code rollback is redeploying the last good tag; data rollback is time travel or re-running an idempotent load for the bad partition. That is why pipelines should be idempotent."
 
 ---
 
@@ -134,6 +246,7 @@ A. Every column must be declared with a data type, which controls what values it
 | Numeric (whole) | `SMALLINT` | Whole numbers, smaller range (-32,768 to 32,767); use for small bounded values (e.g. a percentage) |
 | Numeric (whole) | `BIGINT` | Whole numbers, very large range; use for IDs that could exceed `INTEGER`'s ceiling (e.g. high-volume auto-incrementing keys) |
 | Numeric (auto-increment) | `SERIAL` / `BIGSERIAL` (Postgres) | Same storage as `INTEGER`/`BIGINT`, but auto-generates the next sequential value on insert - common for surrogate Primary Keys |
+| Numeric (auto-increment, modern) | `INT GENERATED ALWAYS AS IDENTITY` (Postgres 10+, SQL standard) | The recommended replacement for `SERIAL` in new Postgres code: standard SQL, the sequence is owned by the column, and `ALWAYS` blocks accidental manual inserts into the key |
 | Numeric (exact decimal) | `DECIMAL(p,s)` / `NUMERIC(p,s)` | Exact, no rounding error; `p` = total digits, `s` = digits after the decimal point. `DECIMAL(10,2)` = up to 10 digits total, 2 after the decimal (max value 99999999.99). **Rule: always use this for money** - never floating point |
 | Numeric (approximate) | `FLOAT` / `REAL` / `DOUBLE PRECISION` | Approximate binary floating point - fast, but can introduce rounding error; fine for scientific/measurement data, never for currency |
 | String (fixed) | `CHAR(n)` | Fixed-length; always stores exactly `n` characters, padding shorter values with trailing spaces. Rare in practice - wastes space for variable-length data |
@@ -210,7 +323,17 @@ HAVING AVG(e.salary) > 80000;
 
 Expanded: `WHERE` filters individual rows *before* grouping happens; `HAVING` filters *groups* after aggregation - this is why `HAVING AVG(e.salary) > 80000` works but `WHERE AVG(e.salary) > 80000` throws an error (the aggregate doesn't exist yet at the point `WHERE` runs). A department with zero matching employees (e.g. Marketing, if unreferenced) won't appear in an `INNER JOIN` result at all - it would need a `LEFT JOIN` to still show up with a `NULL`/zero aggregate.
 
-**Rule:** every non-aggregated column in the `SELECT` list must also appear in `GROUP BY`, or Postgres raises an error - you can't select a raw column alongside an aggregate unless it's part of what you're grouping by.
+**Rule:** every non-aggregated column in the `SELECT` list must also appear in `GROUP BY`, or Postgres raises an error - you can't select a raw column alongside an aggregate unless it's part of what you're grouping by. (Postgres nuance: if you group by a table's primary key, Postgres also lets you select other columns of that same table, because they are functionally dependent on the key. Other engines may not allow this, so the strict rule is the safe habit.)
+
+---
+
+Q. What is the difference between `WHERE` and `HAVING`?
+
+A. `WHERE` filters rows before grouping; `HAVING` filters groups after aggregation, so only `HAVING` can use aggregates like `SUM()` or `COUNT()`.
+
+Expanded: see the `GROUP BY` example above. Filter as much as possible in `WHERE` so fewer rows reach the aggregation step.
+
+**Interview line:** "WHERE filters rows before GROUP BY, HAVING filters the aggregated groups after it. You can't put an aggregate in WHERE because it hasn't been computed yet."
 
 ---
 
@@ -265,6 +388,8 @@ Expanded: a subquery nested in `WHERE`/`FROM` is evaluated first and its result 
 Q. (Common interview question, per Evan Flint) Write a query to find out what the third highest salary per department is in an employee table.
 
 A. (Teacher's definition) Yes. These are good examples for showing students that a CTE can replace the subquery you're using to filter the results of a window function.
+
+**Short answer:** rank rows within each department with a window function (`DENSE_RANK() OVER (PARTITION BY department_id ORDER BY salary DESC)`) inside a CTE or subquery, then filter `rank = 3` in the outer query.
 
 **Subquery approach:**
 ```sql
@@ -381,6 +506,30 @@ Expanded: this is the standard interview question that tests whether you underst
 | `ROW_NUMBER()` | Every row gets a unique, sequential number regardless of ties (order among tied values is arbitrary unless a tiebreaker is added to `ORDER BY`) | Exactly one row per department (here: exactly 4 rows, one per department) |
 
 **Naming gotcha:** an unaliased window function column takes on the bare function name as its output column header (`rank`, `dense_rank`, `row_number`) - which is why the classroom queries above could filter with `WHERE rank = 3` in the outer query even without writing `AS rank` explicitly. Aliasing explicitly (as done in the CTE versions) is still the clearer habit, especially once a query has more than one window function in play.
+
+Expanded (correction - portability): the subquery version above has **no alias on the derived table** (`) WHERE rank = 3`). That only works in **PostgreSQL 16+**. PostgreSQL 15 and earlier, MySQL, SQL Server, Redshift and Snowflake all require one, and relying on the default `rank` column name is also Postgres-specific. On an interview whiteboard always write:
+
+```sql
+SELECT *
+FROM (
+    SELECT employee_name, department_id, salary,
+           DENSE_RANK() OVER (PARTITION BY department_id ORDER BY salary DESC) AS salary_rank
+    FROM employees_demo
+) AS ranked
+WHERE salary_rank = 3;
+```
+
+**Which function actually answers the question?**
+
+| The question really means... | Use | Why |
+|---|---|---|
+| "Third-highest **salary value**" (distinct amounts) | `DENSE_RANK() = 3` | No gaps, so rank 3 always means the third distinct salary |
+| "The third-highest-paid **person**" (exactly one row) | `ROW_NUMBER() = 3` with a tiebreaker in `ORDER BY` (e.g. `salary DESC, employee_id`) | Exactly one row per group, deterministic |
+| Rank with gaps (competition ranking) | `RANK()` | Careful: **`RANK()` can return zero rows** for a department. If two people tie at rank 2, the next rank is 4, so `rank = 3` matches nothing (this is why departments 1, 3 and 4 are missing from the `RANK()` output above) |
+
+**Interview line:** "ROW_NUMBER gives unique numbers, RANK gives ties the same rank and then skips, DENSE_RANK gives ties the same rank with no gaps. For 'Nth highest salary' I use DENSE_RANK, because RANK can skip N entirely when there are ties."
+
+*(See also `Training 5.md` for the logical order of execution that explains why the filter needs an outer query, and `Training 21.md` for `QUALIFY`, which filters window results without a subquery in Snowflake/Databricks.)*
 
 ---
 
@@ -518,12 +667,24 @@ DROP INDEX idx_my_table_some_column;
 ```
 That connects indexing and query plans rather than teaching indexes as an isolated SQL command.
 
+**Short answer:** an index is a B-tree that lets the planner jump to matching rows instead of scanning the whole table. You check whether it is used with `EXPLAIN ANALYZE`, and it costs write speed and disk space.
+
 Expanded: an index is a separate, ordered data structure (B-tree by default in Postgres) that maps column values to the physical rows containing them, so the database can jump straight to matching rows instead of reading every row in the table (a Sequential Scan). `EXPLAIN` shows the query planner's *chosen* execution plan without running the query; `EXPLAIN ANALYZE` actually executes it and reports real timing alongside the plan - always prefer `ANALYZE` when you want true performance numbers rather than just estimates. The planner's choice between `Seq Scan` and `Index Scan` is a cost-based decision, not a guarantee - on small tables a full scan is often genuinely cheaper than the overhead of traversing an index, which is why table size/selectivity matters for the demonstration to be convincing.
+
+**Warning: `EXPLAIN ANALYZE` really runs the statement.** On a `SELECT` that is harmless, but on an `UPDATE`, `DELETE` or `INSERT` it changes the data. Wrap it in a transaction you roll back:
+
+```sql
+BEGIN;
+EXPLAIN ANALYZE DELETE FROM orders WHERE order_date < '2020-01-01';
+ROLLBACK;
+```
 
 | Scan type | When PostgreSQL picks it | Cost characteristic |
 |---|---|---|
 | `Seq Scan` | Small tables, or queries matching a large fraction of rows | Reads every row once, in physical order - no extra structure to maintain/traverse |
 | `Index Scan` | Larger tables with a selective filter (few matching rows) matched to an existing index | Traverses the B-tree to find matches, then fetches only those rows - overhead pays off only when it skips enough rows to matter |
+| `Index Only Scan` | Every column the query needs is in the index (a "covering" index) | Answers from the index alone without visiting the table rows - the fastest case |
+| `Bitmap Index Scan` + `Bitmap Heap Scan` | Medium selectivity (too many rows for an Index Scan, too few for a Seq Scan), or combining several indexes with AND/OR | Builds a bitmap of matching row locations from the index, then reads those table pages in physical order. Very common in real plans |
 
 | Index cost | Trade-off |
 |---|---|
@@ -531,6 +692,40 @@ Expanded: an index is a separate, ordered data structure (B-tree by default in P
 | `INSERT` | Every new row also adds an entry to each index on that table |
 | `UPDATE` | Any indexed column that changes value requires the index entry to be updated |
 | `DELETE` | Index entries for deleted rows must also be removed |
+
+---
+
+Q. How do you find and fix a slow query?
+
+A. Measure first, then reduce the work: run `EXPLAIN ANALYZE`, find the most expensive node (usually a `Seq Scan` on a big table, a bad join, or a large sort), fix that, and measure again.
+
+Expanded: common fixes, in rough order: add or adjust an index on the filter/join columns; select only needed columns; filter earlier; rewrite correlated subqueries as joins; make sure table statistics are fresh (`ANALYZE table_name`); and for very large tables, partition by date. The 5-step "memorize this sequence" block above is the hands-on version.
+
+**Interview line:** "I run EXPLAIN ANALYZE, look for the most expensive node, usually a sequential scan or a big sort, add the right index or rewrite the query, update statistics, and compare the plans and timings before and after."
+
+---
+
+Q. When would an index hurt instead of help?
+
+A. When the table is write-heavy (every insert/update/delete must also update every index), when the column has low selectivity (e.g. a boolean, so the planner scans anyway), when the table is small, or when the query wraps the column in a function (`WHERE LOWER(email) = ...`) so a plain index can't be used.
+
+Expanded: unused indexes still cost disk and write time. Bulk loads into warehouses are often faster if indexes are dropped and recreated after the load.
+
+**Interview line:** "Indexes speed up selective reads but slow every write and take space, so I index columns used in selective filters, joins and sorts, and drop indexes the planner never uses."
+
+---
+
+Q. What is the difference between a clustered and a non-clustered index?
+
+A. A **clustered** index defines the physical order of the table's rows, so a table can have only one (SQL Server and MySQL InnoDB cluster on the primary key). A **non-clustered** (secondary) index is a separate structure that points to the rows, and a table can have many.
+
+Expanded: PostgreSQL has no automatically maintained clustered index. Every Postgres index is a secondary index pointing into the table (the "heap"). The `CLUSTER` command reorders a table once by an index, but the order is not kept as new rows arrive. Columnar warehouses use a related idea instead of indexes: sort keys (Redshift) and clustering keys (Snowflake).
+
+| | Clustered | Non-clustered |
+|---|---|---|
+| Physical row order | Is the index order | Independent of the index |
+| How many per table | One | Many |
+| Lookup | Finds the row directly | Finds a pointer, then fetches the row |
 
 ---
 
@@ -556,9 +751,13 @@ That's a small, targeted query. An analyst might instead ask: *"For each product
 
 Expanded: the core distinction is **OLTP vs. OLAP** (covered earlier in `Training 0.md`) - an application database is optimized for fast, narrow, single-row reads/writes (OLTP), while a warehouse is optimized for scanning and aggregating huge volumes of historical data across many rows at once (OLAP). This is why the SQL skills covered throughout this training (joins, aggregations, CTEs, window functions, indexing and query plans) matter so much to data engineers - analytical workloads use them constantly.
 
+---
+
 ## Where Warehouse Data Comes From
 
-Data typically flows in from many systems into a central analytical repository:
+Q. Where does a data warehouse's data come from?
+
+A. Data typically flows in from many systems into a central analytical repository:
 ```
 PostgreSQL application DB --+
                             |
@@ -586,9 +785,13 @@ Inside the warehouse, a typical structure looks like:
            Power BI          Tableau          Python
 ```
 
+---
+
 ## Building a Small Data Warehouse in PostgreSQL
 
-PostgreSQL absolutely can be used as a data warehouse - in fact, it's an excellent way to teach the concepts before introducing specialized platforms.
+Q. How would you build a small data warehouse (star schema) in PostgreSQL?
+
+A. PostgreSQL absolutely can be used as a data warehouse - in fact, it's an excellent way to teach the concepts before introducing specialized platforms.
 
 Given operational tables (`customers`, `orders`, `orderdetails`, `products`, `payments`, `employees`), rather than letting analysts work directly against those operational tables, create a separate warehouse schema:
 ```sql
@@ -679,9 +882,15 @@ ORDER BY
 ```
 That's fundamentally what a warehouse is about: organizing historical data so analytical questions are easy and efficient to answer.
 
+*(Star schema, facts, dimensions and grain are covered in depth in `Training 5.md`, which is the main reference for dimensional modeling.)*
+
+---
+
 ## How Data Gets Into It (a Primitive ETL Pipeline)
 
-A simple Python/Pandas pipeline for feeding a warehouse:
+Q. What does a minimal ETL pipeline into the warehouse look like?
+
+A. A simple Python/Pandas pipeline for feeding a warehouse:
 ```
 Postgres operational tables
           |
@@ -725,9 +934,15 @@ sales.to_sql(
 ```
 That's a primitive ETL pipeline feeding a data warehouse - extract via `pd.read_sql`, transform via a Pandas `merge` + calculated column, load via `to_sql`. See `Training 2.md` for the underlying Pandas concepts (`merge`, DataFrame column math).
 
+Expanded (correction - idempotency): `if_exists="append"` makes this pipeline **not idempotent**. Running it twice loads every row twice, and `fact_sales` silently doubles. A production version should be safe to re-run: truncate/overwrite the target (`if_exists="replace"`, or `TRUNCATE` first), or load into a staging table and then `INSERT ... ON CONFLICT DO NOTHING` / `MERGE` into the target, or delete and reload only the date range being processed. See `Training 0.md` for idempotency and error handling.
+
+---
+
 ## So Why Not Just Use PostgreSQL?
 
-For a small company, you sometimes can - PostgreSQL is mature, reliable, inexpensive, and extremely capable. A warehouse containing 1 million, 10 million, or even 50 million rows may work perfectly well in PostgreSQL with good schema design, indexes, partitioning, sufficient hardware, and well-written queries.
+Q. Why not just use PostgreSQL as the data warehouse?
+
+A. For a small company, you sometimes can - PostgreSQL is mature, reliable, inexpensive, and extremely capable. A warehouse containing 1 million, 10 million, or even 50 million rows may work perfectly well in PostgreSQL with good schema design, indexes, partitioning, sufficient hardware, and well-written queries.
 
 The problem becomes apparent as the analytical workload grows. Imagine:
 ```sql
@@ -748,9 +963,13 @@ SELECT * FROM customers WHERE customer_id = 12345;
 ```
 PostgreSQL is traditionally optimized around general-purpose relational/transactional workloads, while modern analytical systems make architectural choices specifically for enormous scans and aggregations.
 
+---
+
 ## Redshift (Columnar Storage)
 
-Amazon Redshift is AWS's cloud data warehouse. One of the big differences is that Redshift uses a **column-oriented architecture**.
+Q. What is the difference between row-oriented and column-oriented storage, and why does Redshift use columnar?
+
+A. Amazon Redshift is AWS's cloud data warehouse. One of the big differences is that Redshift uses a **column-oriented architecture**.
 
 Consider this table:
 
@@ -780,9 +999,17 @@ SELECT SUM(price) FROM sales;
 ```
 The analytical engine mostly cares about the `price` column - it doesn't necessarily need to read all the other columns. Across billions of rows, that's enormously valuable. Columnar data also tends to compress extremely well, further reducing how much data must be read.
 
+**Interview line:** "Row storage keeps whole rows together, which is fast for OLTP lookups and single-row writes. Columnar storage keeps each column together, so an analytical query reads only the columns it needs and compresses far better, which is why warehouses and Parquet are columnar."
+
+*(Redshift is covered in depth in `Training 18.md`.)*
+
+---
+
 ## Snowflake (Separated Storage & Compute)
 
-Snowflake made another architectural idea extremely popular: **separating storage from compute**.
+Q. What does "separating storage and compute" mean?
+
+A. Snowflake made another architectural idea extremely popular: **separating storage from compute**.
 ```
                  STORAGE
               All company data
@@ -797,9 +1024,15 @@ Snowflake made another architectural idea extremely popular: **separating storag
 ```
 The data doesn't have to live on the same machine that's executing the query - you can scale compute separately. If finance needs huge computational resources at month end, you can increase its compute without rebuilding the entire storage architecture. When nobody needs that compute, it can be reduced or suspended. This architecture is extremely attractive in cloud environments.
 
+*(Snowflake is covered hands-on in `Training 15.md` and `Training 16.md`.)*
+
+---
+
 ## Databricks (The Lakehouse)
 
-Databricks comes from a somewhat different lineage - its roots are closely associated with Apache Spark and large-scale distributed data processing. Instead of thinking only "database -> warehouse," Databricks helped popularize the modern **lakehouse** approach:
+Q. What is a lakehouse, and where does Databricks fit?
+
+A. Databricks comes from a somewhat different lineage - its roots are closely associated with Apache Spark and large-scale distributed data processing. Instead of thinking only "database -> warehouse," Databricks helped popularize the modern **lakehouse** approach:
 ```
              Object Storage
           S3 / ADLS / GCS
@@ -836,7 +1069,13 @@ Instead of one PostgreSQL server doing all the work, Spark can distribute proces
 ```
 Real systems are considerably more sophisticated, but that's the basic idea students should understand.
 
+---
+
 ## PostgreSQL vs Redshift vs Snowflake vs Databricks
+
+Q. How do PostgreSQL, Redshift, Snowflake and Databricks compare?
+
+A.
 
 | System | Best mental model |
 |---|---|
@@ -847,9 +1086,13 @@ Real systems are considerably more sophisticated, but that's the basic idea stud
 
 The important point isn't that PostgreSQL is bad for analytics - it isn't. It's that eventually the requirements change. You go from *"Store our company's sales data"* to *"Scan 8 TB of sales data, join it against customer and advertising data, calculate 30 metrics, and let 200 analysts do this simultaneously."* At that point, specialized analytical architecture becomes much more attractive.
 
+---
+
 ## A Good Progression for Students
 
-The technologies covered actually form a natural progression:
+Q. How do these technologies build on each other?
+
+A. The technologies covered actually form a natural progression:
 ```
 PostgreSQL
     |

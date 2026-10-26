@@ -19,6 +19,8 @@ A. (Teacher's definition) Evan posted an AI-generated reading list in answer to 
 
 Expanded: There's no single guide for this. Evan said he "can't point you to a single guide". It combines three disciplines, and the core idea is that **logical coherence and physical performance are separate design problems that have to be solved together.** Just before posting the list, Evan also noted that if many dimension tables get queried, a **snowflake schema** can be the more efficient design than a star schema. The goal is whatever design is most usable for the people querying it in production.
 
+**Expanded (correction):** snowflaking normalizes dimensions into more tables, which *adds* joins, so it is rarely faster to query. Its benefits are less duplicated storage and easier maintenance of very large, deep dimension hierarchies. For query performance on columnar MPP warehouses, the star schema is the usual default (see `Training 5.md`).
+
 | Discipline | Question it answers | Examples |
 |---|---|---|
 | **Logical data architecture** | How are entities and business meaning organized? | Entities, relationships, facts, dimensions, business domains, shared definitions |
@@ -86,14 +88,14 @@ Expanded: AWS has two routes for streaming. **MSK (Managed Streaming for Apache 
 |---|---|
 | Producer → **broker** → consumer | Producer → **stream** → consumer |
 | You see and manage the brokers | The stream does the broker's job "behind the veil"; you have limited control |
-| You pay for the cluster | You pay per message / throughput |
+| You pay for the cluster | Provisioned: per **shard-hour** + PUT payload units. On-demand: per GB written/read + a per-stream hourly charge |
 | Scale by adding brokers and partitions | Scale with **shards** (comes up in interviews) |
 
 ---
 
 Q. What's the difference between Kinesis Data Streams and Kinesis Firehose?
 
-A. (Teacher's definition) Kinesis Data Streams is a serverless equivalent of Kafka. Kinesis Firehose is a message delivery system which takes the place of a consumer within a delivery pipeline.
+A. (Teacher's definition, same as above) "Kinesis Firehose is a message delivery system which takes the place of a consumer within a delivery pipeline."
 
 Expanded: **Data Streams** holds messages so that *your* consumer code can read and process them. **Firehose** *is* the consumer: you don't write one. You point Firehose at a destination (S3, Redshift, etc.) and it batches and delivers the messages for you.
 
@@ -212,6 +214,33 @@ Producer ─▶ Kinesis ──────┼─▶ KCL application ......... cu
 
 ---
 
+Q. How does Kinesis Data Streams scale, and what limits does a shard have?
+
+A. A stream scales by adding **shards**. Each shard takes about 1 MB/s or 1,000 records/s of writes and serves 2 MB/s of reads.
+
+**Expanded:**
+
+| Topic | Detail |
+|---|---|
+| Write limit per shard | 1 MB/s or 1,000 records/s |
+| Read limit per shard (shared) | 2 MB/s total, split across **all** standard consumers, and 5 `GetRecords` calls/s |
+| **Enhanced fan-out (EFO)** | Each registered consumer gets its **own** 2 MB/s per shard, pushed over HTTP/2 (`SubscribeToShard`), with lower latency. Costs extra |
+| Shard iterator types | `TRIM_HORIZON` (oldest kept record), `LATEST` (only new records), `AT_SEQUENCE_NUMBER` / `AFTER_SEQUENCE_NUMBER`, `AT_TIMESTAMP` |
+| Resharding | **Split** a shard to add capacity, **merge** two to save cost (provisioned mode). On-demand mode does this automatically |
+| Retention | 24 hours default, up to 365 days |
+| Throttling | Exceeding a shard's limits returns `ProvisionedThroughputExceededException`; retry with exponential backoff (the SDK and KPL do this) |
+
+**Hot shards:** the partition key is hashed to pick a shard, so a skewed key (one very busy station, or a constant key) sends most traffic to one shard and throttles it while others sit idle. Same problem as a hot Kafka partition (`Training 13.md`). Fixes: a higher-cardinality key, adding a random suffix (then aggregating downstream), or splitting the hot shard.
+
+**Firehose delivery settings worth knowing:** **buffering hints** (flush when the buffer reaches a size, e.g. 64-128 MB for Parquet, or an interval, e.g. 60-300 s, whichever comes first) and an S3 **prefix** with dynamic partitioning, e.g. `bronze/station_status/!{partitionKeyFromQuery:station_id}/` or `year=!{timestamp:yyyy}/`. Bigger buffers mean fewer, larger files.
+
+**Interview lines:**
+- "Kinesis scales by shards: about 1 MB/s in and 2 MB/s out per shard. I size the shard count from peak throughput, or use on-demand mode if traffic is unpredictable."
+- "Enhanced fan-out gives each consumer its own 2 MB/s per shard instead of sharing it, so I use it when several consumers read the same stream with low latency."
+- "For a hot shard I fix the partition key first: more cardinality, or salting the key, and split the shard if needed. Producers retry throttling errors with backoff."
+
+---
+
 Q. What are the options for stream *processing* (transforming data in flight) on AWS?
 
 A. (Teacher's definition) Streaming Processing Options on AWS:
@@ -221,7 +250,7 @@ A. (Teacher's definition) Streaming Processing Options on AWS:
 4. Managed Streaming for Apache Flink
 5. Lambda functions - ONLY A GOOD SOLUTION IN RARE CASES
 
-Expanded: A stream (Kinesis Data Streams or MSK) only **moves** messages; something else has to **process** them. Evan's history with Firehose: it used to just deliver data, with no way to transform it, so for real transformations you had to write a Spark Structured Streaming job. Firehose now has a code execution environment (pandas or plain Python logic is fine). But **don't put Spark code in Firehose**: it's serverless and **not distributed**. That's true of almost every serverless service. The exceptions are **Glue** and **EMR Serverless**, which were designed from the ground up to run distributed while still being serverless. MSK and Flink pair up: MSK (Kafka) is the streaming *pipeline*, but it doesn't do the stream *processing*, and Managed Flink handles that side.
+Expanded: A stream (Kinesis Data Streams or MSK) only **moves** messages; something else has to **process** them. Evan's history with Firehose: it used to just deliver data, with no way to transform it, so for real transformations you had to write a Spark Structured Streaming job. Evan said Firehose now has a code execution environment where pandas or plain Python logic is fine. Precisely: Firehose itself runs no user code. Its **data transformation** feature invokes a **Lambda function you attach** on each buffered batch (up to about 6 MB per invocation, within the Lambda timeout), and that Lambda can use pandas. Firehose also has built-in JSON → Parquet/ORC conversion (using a Glue table schema) and dynamic partitioning, with no code. Either way, **don't put Spark code in Firehose**: it's serverless and **not distributed**. That's true of almost every serverless service. The exceptions are **Glue** and **EMR Serverless**, which were designed from the ground up to run distributed while still being serverless. MSK and Flink pair up: MSK (Kafka) is the streaming *pipeline*, but it doesn't do the stream *processing*, and Managed Flink handles that side.
 
 | # | Option | What it is | Distributed? | Good for | Watch out for |
 |---|---|---|---|---|---|
@@ -250,7 +279,11 @@ Why that matters, cost: at 1,500 messages per second, invoking Lambda once per m
 | Invocations at 1,500 msg/s | 1,500 per second | Far fewer (one per batch) | One continuously running job |
 | Processing model | Per record | Micro-batch (AWS-managed) | Micro-batch (Spark-managed) |
 | Distributed? | No | No | Yes |
-| Use for | Never | Demos, small/light workloads | Production, heavy transforms |
+| Use for | Never (per-record invocation) | Demos and light production workloads | Production, heavy transforms |
+
+**Expanded (correction):** "not good for any production application" is overstated. Kinesis → Lambda through an event source mapping is a widely used production pattern for **light, per-record or small-batch work**: enrichment, routing, filtering, writing to DynamoDB. The mapping supports batch size and batching window, a **parallelization factor of up to 10 concurrent batches per shard**, bisect-batch-on-error, and on-failure destinations. Lambda is the wrong choice for **heavy, stateful or windowed** processing (joins, sessionization, large aggregations), where Flink or Spark Structured Streaming fits.
+
+**Interview line:** "Lambda with an event source mapping is fine in production for light stateless processing of a stream. Once I need state, windows or heavy transforms, I move to Managed Flink or Spark Structured Streaming."
 
 ---
 
@@ -267,6 +300,8 @@ You can use:
 - Oracle
 - Microsoft SQL Server
 - AWS Aurora - an AWS-designed SQL program, designed for speed
+
+See `Training 18.md` ("RDS") for the main RDS entry (Multi-AZ, read replicas, RDS vs EC2, extraction patterns). This entry is a short recap.
 
 Expanded: RDS is AWS running a normal relational database (PostgreSQL, MySQL, MariaDB, Oracle, SQL Server) for you on a virtual server. You pick the engine and the instance size, and AWS handles installing it, patching, backups, failover and storage. You still design the tables and write the SQL. It's an **OLTP** database: built for an application's many small reads and writes. It is not a warehouse for big analytical scans, which is what Redshift (OLAP) is for. **Aurora** is AWS's own cloud-built MySQL/PostgreSQL-compatible engine, offered through RDS.
 
@@ -315,7 +350,7 @@ Expanded: Together these build one connected system on top of the warehouse you 
 | **SageMaker** | AWS's ML platform: train, deploy and host models as endpoints | Hosts the ML model that reads Redshift data and serves predictions to Streamlit |
 | **Redshift** | Your warehouse (Gold layer) | The data everything reads from |
 | **RAG pipeline** | Retrieval-Augmented Generation | Lets a Gen AI app answer questions about *your* data |
-| **MLflow** | Open-source MLOps platform: experiment tracking, model registry, deployment | Manages the ML and Gen AI pipelines (see Agent Generated Notes: MLOps) |
+| **MLflow** | Open-source MLOps platform: experiment tracking, model registry, deployment | Manages the ML and Gen AI pipelines (see "Goal 1c: MLflow and MLOps" below) |
 
 ```
 Kinesis / Lambda ──▶ S3 ──▶ Glue ──▶ Redshift (Gold)
@@ -358,15 +393,17 @@ Expanded: They're related but not the same thing. **RAG is the pipeline (the pro
 | Relationship | Usually *uses* a vector DB for retrieval | One component *inside* a RAG pipeline |
 | Examples | LangChain/LlamaIndex apps, Amazon Bedrock Knowledge Bases | pgvector (Postgres on RDS/Aurora), OpenSearch, Pinecone, Chroma |
 
----
+**Interview line:** "RAG retrieves relevant chunks of my own data, usually by similarity search over embeddings in a vector database, and adds them to the LLM's prompt, so it can answer about private data without retraining. The data engineering work is the ingestion: chunking, embedding, metadata and keeping the index fresh."
 
-# Agent Generated Notes (from Class Recording, live)
-
-Source: near-live transcript of today's OBS recording (`transcriptions/Training 22 – 2026-10-12 13-10-07/live_transcript.md`), Whisper "small", no speaker labels. Timestamps are from the start of the recording (0:00 = 1:10 PM). Covers what was missed after the RAG / vector database notes above.
+These notes are the starting point for roadmap Day 39 (RAG & Vector Data Eng.); the local-AI and Bedrock follow-up is in `Training 25.md`.
 
 ---
 
-## Vector databases: what's actually in them (0:45–0:49)
+# Class Walkthrough: Kinesis -> Glue Streaming -> Aurora
+
+---
+
+## Vector databases: what's actually in them
 
 - A vector database is **unreadable to humans**: if you query it yourself, all you see is series of numbers.
 - Those numbers come from passing natural language through a **tokenizer**, which converts words into numbers that carry meaning values inside the LLM.
@@ -378,11 +415,15 @@ Source: near-live transcript of today's OBS recording (`transcriptions/Training 
 
 ---
 
-## Goal 1c: MLflow and MLOps (0:49–0:52)
+## Goal 1c: MLflow and MLOps
 
 Evan added a third goal to the Fun Stuff list: **1c. Management of the ML and Gen AI pipelines using MLflow.**
 
 - **MLflow** is increasingly asked about in interviews: less than RAG, but there's an organizational push at his company to teach data engineers MLflow.
+Q. What is MLOps?
+
+A. (Teacher's definition, as said in class) Deployment and management of ML and AI pipelines, as described below.
+
 - **MLOps** = deployment and management of ML and AI pipelines: delivering data from the regular database to those pipelines, training the models on that data, and letting the models get progressively better at answering questions about it. The "lower-level pipes" of how an ML model actually works.
 - This is what's under the hood when you ask ChatGPT or Claude something: engineers deploy the website, connect it to the model, and make the model able to respond.
 - **We do NOT do model development** (that's AI researchers). We assume the model is finished and available either through a **REST API** or as a **SafeTensors file** we deploy ourselves. The closest we come to editing a model is taking the SafeTensors file and deploying it in an environment we choose.
@@ -393,13 +434,10 @@ Evan added a third goal to the Fun Stuff list: **1c. Management of the ML and Ge
 | Output | Model weights | Pipelines, endpoints, apps |
 | Get the model via | They create it | REST API or SafeTensors file |
 
-Break: 0:52–1:05 (about 2:02–2:15 PM).
-
 ---
 
-## After break: Q&A on Glue vs Spark (1:05–1:10)
+## After break: Q&A on Glue vs Spark
 
-- Richard has permission to keep his video off (extenuating circumstances); **everyone else should keep video on.**
 - **Q: Why list Spark (EMR) and Glue separately as streaming options?** Glue is Spark under the hood, but it's a **distinct service** with things unique to it:
   - **Serverless:** most cloud services that run Spark are *not* serverless, so Glue has a very particular architecture.
   - It *can* run native Spark code (shown last week), but it has its own conventions, the biggest being the **DynamicFrame**: a DataFrame without the rule that every row has the same columns.
@@ -411,9 +449,11 @@ Break: 0:52–1:05 (about 2:02–2:15 PM).
 | **Glue** | Spark | Serverless architecture, DynamicFrame for messy JSON | No |
 | **Redshift** | PostgreSQL | OLTP → OLAP, row-based → columnar | No |
 
+(The batch version of this EMR vs Glue question, with the three-layer interview answer, is in `Training 20.md`. EMR architecture and Redshift distribution/sort keys are covered in `Training 18.md` and `Training 21.md`.)
+
 ---
 
-## Plan for the rest of class (1:10–1:14)
+## Plan for the rest of class
 
 - **Live demo:** a different pipeline on the same Citi Bike data: **stream with Kinesis → land in RDS**, and maybe later also into the Bronze S3 bucket (the data lakehouse endpoint).
 - **RDS is temporary:** "RDS is not cheap". If it needs approval from someone higher up at the company, Evan will stop and explain it theoretically instead.
@@ -424,7 +464,7 @@ Break: 0:52–1:05 (about 2:02–2:15 PM).
 
 ---
 
-## Kinesis console tour (1:15–1:17)
+## Kinesis console tour
 
 The Kinesis console has three services in one UI:
 
@@ -434,11 +474,13 @@ The Kinesis console has three services in one UI:
 | **Data Firehose** | Something like a Kafka consumer. Can't run Spark streaming code, but for a small pipeline that won't create consumer lag, it can run **pandas** code |
 | **Managed Apache Flink** | What you'd use in a **real production** setting |
 
+> Accuracy note: Firehose doesn't run pandas itself. It calls a Lambda function you attach for transformations, and that Lambda can use pandas (see "stream processing options" above).
+
 - **Fraud detection example:** if a bank hired you to build fraud detection, Evan would recommend **Managed Flink over Spark Structured Streaming**, because Flink handles **each message individually**, which is what production fraud detection needs. Spark Structured Streaming works in micro-batches.
 
 ---
 
-## Demo: creating the Kinesis data stream (1:17–1:24)
+## Demo: creating the Kinesis data stream
 
 1. Kinesis → **Create data stream**, named `citibike-station-stream`.
 2. **Capacity mode:**
@@ -447,7 +489,7 @@ The Kinesis console has three services in one UI:
    - Evan started with on-demand, but the AI guide recommended **provisioned**, so he used that.
 3. **Shards** are like **partitions in Kafka**: the stream is split into separate channels, and different consumers can read different shards, under our control.
 4. **Per shard:** 1 MB/second and 1,000 records/second of write capacity. That's more than enough here. A big company stream would need more shards, and going very high may require asking AWS for a limit increase.
-5. **Shard count** 1, **retention** default 24 hours (1 day), **max record size** 1,024 KB = 1 MB, same as Kafka.
+5. **Shard count** 1, **retention** default 24 hours (1 day), **max record size** 1,024 KB = 1 MB, same as Kafka's default. (1 MiB is the long-standing default; AWS announced in late 2025 that a stream's maximum record size can be raised to 10 MiB. Check the current Kinesis docs before quoting this in an interview.)
 6. **Create.** It's active almost immediately because it's serverless.
 7. The stream page lists **producers** and **consumers** (empty until something connects).
 8. **Verified with the CLI:** first the command returned nothing because of a `--profile` mistake. Retrieving the stream's **ARN** proved it exists: no stream, no ARN.
@@ -472,7 +514,7 @@ The Kinesis console has three services in one UI:
 
 ---
 
-## Demo: Lambda producer for Kinesis (1:24–1:44)
+## Demo: Lambda producer for Kinesis
 
 - The AI guide said to **modify the existing ingestion Lambda** to also send to Kinesis.
 - **Decision:** Evan did **not** modify it, because it's running on a schedule all week and editing it could interrupt the ingestion. Instead he **created a separate Lambda** (`lambda-kinesis`, Python 3.14 runtime, author from scratch) just for the Kinesis demo.
@@ -482,13 +524,11 @@ The Kinesis console has three services in one UI:
   - The new Lambda auto-created its own role (he couldn't find the custom execution role option), so he edited **that** role's policy too. Watch for this: the role you added permissions to has to be the one the function actually uses. Same lesson as your 9:50 AM `AccessDenied` this morning.
 - **Test:** ran the producer from the CLI and got `StatusCode 200`, executed version `$LATEST`. Green light for the Lambda.
 
-Break: 1:44–1:56 (about 2:54–3:06 PM). The transcript is silent here.
-
 ---
 
-## Demo: RDS + IAM for Glue (1:56–2:01)
+## Demo: RDS + IAM for Glue
 
-The audio picks up mid-step. Evan had gotten a database **cluster identifier** from a command; any RDS setup during the silent stretch wasn't captured.
+(RDS/Aurora cluster creation steps not shown. Evan already had the database **cluster identifier** from a command.)
 
 - **Goal:** give the Glue role permission to connect to the RDS (Postgres) database.
 - IAM → Roles → `AWSGlueServiceRole-citibike` → Add permissions → **Create inline policy** → JSON.
@@ -505,7 +545,7 @@ The audio picks up mid-step. Evan had gotten a database **cluster identifier** f
 
 ---
 
-## Demo: Glue streaming job Kinesis → RDS Postgres (2:01–2:13)
+## Demo: Glue streaming job Kinesis → RDS Postgres
 
 - The AI guide wanted to **modify the existing Spark/Glue jobs**. Evan pushed back: *"I'd rather just create a new Glue streaming job and put the data directly into RDS with minimal processing to complete the demo pipeline."* Same instinct as the Lambda: don't touch working jobs, build a separate demo.
 - **Job settings:** Glue 5.0, **Spark streaming job**, 2 × G.1X workers, **30-second batch window** (each micro-batch covers 30 s of stream data).
@@ -519,9 +559,13 @@ The audio picks up mid-step. Evan had gotten a database **cluster identifier** f
 
 ---
 
-## Debugging the Glue streaming job: four errors (2:13–3:15)
+## Debugging the Glue streaming job: four errors
 
 Evan's summary: *"I really feel like this class has been IAM focused rather than Kinesis and RDS focused... that is almost all of the greatest headaches that you get when you're trying to work with cloud technology."*
+
+Q. How do you debug a failing Glue streaming job?
+
+A. Confirm the producer and stream have data, then read the job's CloudWatch logs for the first real error (often IAM or schema), fix one thing at a time, stop old runs, and restart with a fresh checkpoint.
 
 **Key signal:** in a Glue streaming job's logs, **"retrying micro batch processing"** means a batch is *failing*. A healthy job doesn't retry.
 
@@ -540,7 +584,7 @@ Evan's summary: *"I really feel like this class has been IAM focused rather than
     --query 'Records[0].Data' --output text | base64 --decode
   ```
   That returned a valid JSON record, which proved the producer and stream were fine and the problem was on the **Glue side**.
-- **Kinesis records are Base64-encoded.** Like Kafka messages are serialized, Kinesis serializes record data as **Base64**, so you decode it to read the JSON.
+- **Decode Base64 when reading from the CLI or Lambda.** Kinesis stores the raw bytes the producer sent. Base64 appears only because the **API/CLI JSON response** (and the Lambda event payload) encodes the binary `Data` blob for transport, so you decode it to read the JSON.
 - **Trust your instincts over the AI.** Evan had noticed earlier that the schema wasn't referenced in the stream, but went ahead because it wasn't in the AI's instructions. That was bug #3. *"You very often do have to trust your instincts over what the AI says."*
 - **Stop the old run before starting a new one**, or you'll read logs from the wrong run. At one point there were 3 failed runs plus 1 running.
 - **Use a fresh checkpoint location** after changing a streaming job's schema/logic. The checkpoint remembers the old state.
@@ -550,13 +594,13 @@ Evan's summary: *"I really feel like this class has been IAM focused rather than
 
 ---
 
-## Result: data flowing Kinesis → Glue → Postgres (3:15–3:21)
+## Result: data flowing Kinesis → Glue → Postgres
 
 `SELECT COUNT(*) FROM station_stream;` returned **2,519 rows**, the same station count as your Gold tables, i.e. one full snapshot.
 
 ```
 Lambda (producer, boto3 put_record)
-   │  Citi Bike station data, Base64-encoded
+   │  Citi Bike station data (raw JSON bytes; Base64 only in API responses)
    ▼
 Kinesis Data Stream (citibike-station-stream, 1 shard)
    │
@@ -573,9 +617,9 @@ Aurora PostgreSQL (RDS) table station_stream
 
 ---
 
-## Student Q&A (2:35–2:57, 3:24–3:25)
+## Student Q&A
 
-- **"I don't think I have Glue access" (Chris):** the **group** already grants Glue. The real error was that the **IAM role** (`citibike-lambda-role`) lacked permission to be assumed by Glue. Evan sent AI-generated policy instructions to apply the same way he applied policies all class. After the break Chris confirmed it was resolved by using an approved role.
+- **"I don't think I have Glue access" (a student):** the **group** already grants Glue. The real error was that the **IAM role** (`citibike-lambda-role`) lacked permission to be assumed by Glue. Evan sent AI-generated policy instructions to apply the same way he applied policies all class. After the break the student confirmed it was resolved by using an approved role.
 - **Glue job succeeds but Redshift table stays empty (Silver → Redshift):** Evan suggested tailing logs while the job runs:
   ```bash
   aws logs tail /aws-glue/jobs/output --follow
@@ -590,7 +634,7 @@ Aurora PostgreSQL (RDS) table station_stream
 
 ---
 
-## Cleanup: shut down what costs money (3:25–3:28)
+## Cleanup: shut down what costs money
 
 Evan asked AI for a final audit of what to stop overnight.
 
@@ -603,6 +647,6 @@ Evan asked AI for a final audit of what to stop overnight.
 
 Steps: close the log tail → list the job runs → copy the run ID of the one that's `RUNNING` → stop it (`aws glue batch-stop-job-run --job-name <job> --job-run-ids <run-id>`).
 
-> Not mentioned in the audio, but a **provisioned** Kinesis stream bills per shard-hour and an **RDS/Aurora** instance bills per hour while running. Evan said RDS "is not cheap" earlier, so those are worth checking in your own account if you build this.
+> Also worth noting: a **provisioned** Kinesis stream bills per shard-hour and an **RDS/Aurora** instance bills per hour while running. Evan said RDS "is not cheap" earlier, so those are worth checking in your own account if you build this.
 
-**Homework:** Evan said he'd give "a basic homework assignment for how to implement this side of things" after cleanup. **It wasn't captured in the recording.** Check the class chat or Teams for it.
+**Homework:** Evan gave "a basic homework assignment for how to implement this side of things" after cleanup. See `homework/assignment/Homework - Training 22 (Assignment).md`.

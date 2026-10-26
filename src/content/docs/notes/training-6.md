@@ -9,6 +9,8 @@ Teacher: Evan Flint
 
 Syllabus Day 7 (per file numbering) - actual coverage: Distributed Systems fundamentals (HPC, fault tolerance, cluster managers). Note: this continues the pacing drift already visible in `Training 5.md`, which covered the Course Roadmap's Day 7 topic (dimensional schemas/medallion architecture) inside the Day 6 file - so this session's real content lines up more closely with the roadmap's Day 8 topic ("Distributed Systems + HDFS") than its own nominal Day 7 slot.
 
+---
+
 # High Performance Computing (HPC)
 
 Q. What does HPC stand for?
@@ -57,6 +59,15 @@ Expanded: a cluster manager is the component responsible for keeping a distribut
 | Zookeeper | ZAB | Historically Kafka, Hadoop, and many other distributed systems needing coordination |
 | Kubernetes | etcd's Raft-based consensus | Container orchestration clusters (in some cases, per teacher's note) |
 
+Expanded (correction): the teacher's list mixes two different kinds of system. Raft and ZAB are used by **coordination/consensus services**, not by resource managers like YARN.
+
+| Category | Job | Examples | Consensus algorithm |
+|---|---|---|---|
+| Resource manager / scheduler | Allocates CPU and memory to jobs and containers | YARN, Kubernetes scheduler, Mesos, Spark Standalone Master | None of its own (YARN uses ZooKeeper for ResourceManager HA) |
+| Coordination / consensus service | Stores small critical metadata, elects leaders, prevents split-brain | ZooKeeper (ZAB), etcd (Raft, used by Kubernetes), Kafka KRaft (Raft, Kafka's metadata quorum) | ZAB / Raft |
+
+Consensus quorums use an **odd number of nodes** (3 or 5): a write needs a majority, so a cluster of n nodes survives (n-1)/2 failures (3 nodes survive 1, 5 survive 2). An even number adds cost without adding fault tolerance.
+
 **Worth remembering for later Kafka material:** KRaft's name is a direct nod to RAFT - Kafka moved away from depending on a separate Zookeeper cluster for coordination toward managing consensus internally via KRaft, removing Zookeeper as an external dependency. This will likely come up again in `Training 13.md`'s Kafka coverage.
 
 **Note on Kubernetes' "(in some cases)":** Kubernetes itself isn't always described as a "cluster manager" in the same breath as YARN/Zookeeper/KRaft, since it's more commonly framed as a container orchestrator - but its control plane relies on `etcd` (a Raft-based key-value store) to do exactly the same job those other tools do: track cluster/node state and keep it consistent across control-plane replicas. This connects forward to `Training 42.md`'s dedicated Kubernetes coverage later in the course.
@@ -69,6 +80,8 @@ Q. For a cluster manager to work, what has to be installed, and how do nodes kno
 
 A. (Teacher's definition) For a cluster manager to work, an instance of it must be installed on all computers in the cluster. These instances know that each other exist, and they send messages to each other periodically known as "heartbeats."
 
+---
+
 Q. What is a heartbeat message?
 
 A. (Teacher's definition) A heartbeat message is just a message from one node to another, and then a confirmation message that the node sends back to the originator.
@@ -79,8 +92,10 @@ Expanded: this is the actual mechanism underlying everything described in the Cl
 |---|---|
 | 1. Send | Node A's cluster-manager instance sends a small "heartbeat" message to Node B |
 | 2. Confirm | Node B immediately sends a confirmation message back to Node A |
-| 3. Repeat | This exchange repeats on a fixed interval, for every node pair the cluster manager tracks |
+| 3. Repeat | This exchange repeats on a fixed interval, between each worker and the master/leader (not between every pair of nodes) |
 | 4. Detect failure | If a confirmation doesn't arrive within the expected window, Node B is presumed down/unreachable, triggering the cluster manager's failure-handling logic |
+
+Expanded (correction): heartbeats are not sent between every pair of nodes; all-to-all heartbeats would grow as O(n^2) messages. In Hadoop, **workers heartbeat to the master**: each DataNode sends a heartbeat to the NameNode every 3 seconds (and the NameNode marks it dead after about 10 minutes of silence), and each NodeManager heartbeats to the YARN ResourceManager. In Raft, the **leader** sends heartbeats to its followers. (Some gossip-based systems like Cassandra exchange state with a few random peers each round, which also avoids all-to-all.)
 
 **Prerequisite worth flagging:** the teacher's definition specifies the cluster manager software itself must be installed on *every* machine in the cluster, not just a central coordinator - each node runs its own instance, and those instances are what talk to each other via heartbeats. This is different from, say, a single external monitoring tool checking on machines from the outside.
 
@@ -92,6 +107,8 @@ Q. What does the algorithm do if a heartbeat message is sent and no response is 
 
 A. (Teacher's definition) If a heartbeat message is sent and NO response is received, then the algorithm considers the node that did not respond to be down.
 
+---
+
 Q. Does the cluster automatically keep working when a node goes down?
 
 A. (Teacher's definition) In some cluster managers there are automatic ways to adjust the cluster's functionality in order to continue operating when a node goes down, and in all cases, a notification is sent to the system administrator to give human attention to the problem.
@@ -101,9 +118,13 @@ Expanded: this is the direct continuation of the heartbeat send/confirm mechanis
 | Response | Guaranteed? | What it looks like |
 |---|---|---|
 | Automatic self-healing (e.g. leader re-election via RAFT/ZAB, rescheduling work to a healthy node, replicating data elsewhere) | **Not always** - "in some cluster managers" | Depends on the specific tool/algorithm; this is what lets a cluster stay available *without* waiting on a human |
-| Notification to the system administrator | **Always** - "in all cases" | Alerting so a human is aware and can investigate/intervene, even if the cluster already recovered on its own |
+| Notification to the system administrator | Only if monitoring/alerting is configured (see correction below) | Alerting so a human is aware and can investigate/intervene, even if the cluster already recovered on its own |
 
 The key distinction to hold onto for an interview: automatic recovery is a *capability*, not a *given* - it varies by which cluster manager/algorithm is in play. Human notification, by contrast, is treated as non-negotiable in every case, because even a cluster that self-heals still had a real failure that needs root-cause investigation (a disk failing, a network partition, bad hardware) - the automation buys uptime, it doesn't remove the need for a person to eventually look at why the node went down.
+
+Expanded (correction): the cluster manager itself does not automatically notify anyone. It records the node as dead (in logs and its UI/metrics). A human is alerted only if monitoring and alerting are set up on top, e.g. Ambari/Cloudera Manager alerts, Prometheus + Alertmanager, CloudWatch alarms or PagerDuty. Setting that up is part of running a production cluster.
+
+**Interview line (what happens when a DataNode dies):** "The DataNode stops sending heartbeats. After about 10 minutes the NameNode marks it dead, finds every block that now has fewer than 3 replicas, and copies them from surviving replicas to other DataNodes. Clients just read from another replica in the meantime, and monitoring alerts the on-call engineer."
 
 ---
 
@@ -112,6 +133,8 @@ The key distinction to hold onto for an interview: automatic recovery is a *capa
 Q. What does YARN stand for?
 
 A. (Teacher's definition) YARN - Yet Another Resource Negotiator.
+
+---
 
 Q. Where does YARN fit into the overall Hadoop cluster?
 
@@ -125,7 +148,18 @@ Expanded: this places YARN (already introduced above as a cluster-manager exampl
 | **YARN** (Yet Another Resource Negotiator) | Cluster/resource manager - tracks node health and schedules/allocates compute resources for jobs across the cluster |
 | **MapReduce** | Distributed processing/compute engine - the original programming model for actually running jobs across the cluster's data |
 
-This ties directly back into the Cluster Manager section above: YARN is Hadoop's *specific* answer to "who tracks which nodes are alive and coordinates work across them" - the same job Zookeeper/KRaft/Kubernetes perform for their respective systems, just scoped to Hadoop's own storage (HDFS) and processing (MapReduce) layers. Worth flagging forward to `Training 8.md`'s Hive + Spark Intro coverage: Spark largely emerged as a faster alternative to MapReduce, but still commonly runs *on top of* YARN and reads/writes HDFS - so YARN's role as cluster manager often persists even once MapReduce itself has been replaced.
+This ties directly back into the Cluster Manager section above: YARN is Hadoop's *specific* answer to "who tracks which nodes are alive and coordinates work across them" - the same job Zookeeper/KRaft/Kubernetes perform for their respective systems, just scoped to Hadoop's own storage (HDFS) and processing (MapReduce) layers. Expanded (YARN components):
+
+| YARN component | Role |
+|---|---|
+| ResourceManager | Cluster-wide master; tracks resources and schedules applications |
+| NodeManager | Agent on each worker; launches and monitors containers, reports to the ResourceManager |
+| ApplicationMaster | One per application (e.g. per Spark job); negotiates containers from the ResourceManager and tracks its tasks |
+| Container | A bundle of CPU and memory on one node where a task (or Spark executor) runs |
+
+**Interview line:** "In YARN the ResourceManager allocates resources cluster-wide, a NodeManager runs on each worker, each application gets its own ApplicationMaster that requests containers, and the work runs inside those containers."
+
+Worth flagging forward to `Training 8.md`'s Hive + Spark Intro coverage: Spark largely emerged as a faster alternative to MapReduce, but still commonly runs *on top of* YARN and reads/writes HDFS - so YARN's role as cluster manager often persists even once MapReduce itself has been replaced.
 
 ---
 
@@ -135,9 +169,13 @@ Q. What does HDFS stand for, and what is it?
 
 A. (Teacher's definition) HDFS - Hadoop Distributed File System. HDFS is a distributed data storage system and the primary location where you will store data in most regular Hadoop clusters.
 
+---
+
 Q. Is HDFS a database?
 
 A. (Teacher's definition) HDFS is NOT a database, it's a file system.
+
+---
 
 Q. How do you actually interact with HDFS?
 
@@ -157,11 +195,32 @@ The command-line interaction model is also worth noting precisely: you're not gi
 
 ---
 
+## HDFS Components (NameNode, DataNode, HA)
+
+Q. What are the components of HDFS?
+
+A.
+
+| Component | Role |
+|---|---|
+| **NameNode** | Master. Holds the file system namespace and block map (which blocks make up each file and where every replica lives) in memory. Stores no file data |
+| **DataNode** | Worker. Stores the actual blocks on local disk, serves reads/writes, sends heartbeats and block reports to the NameNode |
+| **Secondary NameNode** | Checkpoint helper only: periodically merges the edit log into the fsimage. **Not** a failover node |
+| **Standby NameNode (HA)** | Hot standby kept in sync through JournalNodes; ZooKeeper (ZKFC) fails over to it if the active NameNode dies |
+
+Expanded: **write path:** the client asks the NameNode where to put each block, then streams the block through a **pipeline** of DataNodes (client -> DN1 -> DN2 -> DN3); acknowledgements flow back along the pipeline. **Read path:** the client gets block locations from the NameNode, then reads each block directly from the closest DataNode. **Rack awareness:** with the default policy, replica 1 goes on the writer's node (or a random node), replicas 2 and 3 on two different nodes in another rack, so losing a whole rack never loses a block.
+
+**Interview line:** "The NameNode holds metadata, DataNodes hold the blocks. The Secondary NameNode only does checkpoints; high availability comes from a Standby NameNode with ZooKeeper failover."
+
+---
+
 ## Replication
 
 Q. What is replication?
 
 A. (Teacher's definition) Replication - storing the same data multiple times in multiple locations.
+
+---
 
 Q. What is the standard replication factor in Hadoop?
 
@@ -175,7 +234,7 @@ Expanded: this is HDFS's concrete answer to the Fault Tolerance section's core p
 | Replication factor | The number of copies kept per block (Hadoop's default/standard: **3**) |
 | Why 3 specifically | Balances fault tolerance (can lose 2 copies and still have the data) against the storage overhead cost of keeping extra copies |
 
-This directly ties back to the earlier Fault Tolerance and Heartbeat sections: when a node holding a replica misses its heartbeats and is marked down, HDFS's NameNode (the metadata/coordinator component - likely coming up next in this training) can direct the cluster to re-replicate that node's blocks onto a healthy node, restoring the replication factor back to 3 without any data loss.
+This directly ties back to the earlier Fault Tolerance and Heartbeat sections: when a node holding a replica misses its heartbeats and is marked down, HDFS's NameNode (the metadata/coordinator component - see HDFS Components above) can direct the cluster to re-replicate that node's blocks onto a healthy node, restoring the replication factor back to 3 without any data loss.
 
 ---
 
@@ -205,7 +264,25 @@ Expanded: the CAP Theorem states that a distributed system can only fully guaran
 
 This is the theoretical backbone behind why different distributed systems are built with fundamentally different trade-offs, and it'll likely resurface directly in `Training 7.md`'s Distributed Systems + HDFS material and again whenever NoSQL/MongoDB (`Training 14.md`) comes up.
 
-**Correction - HDFS specifically chose AP, not CP.** Teacher's definition (directly, in response to a student question about whether HDFS keeps all its replicas in sync instantly): "HDFS is not what we call strongly consistent. Instead, HDFS is highly available... Hadoop, as a system, chose the availability side of that. So Hadoop systems can be highly available, but they do not guarantee strong consistency." Since partition tolerance isn't optional for a distributed file system, this means HDFS lands on the **AP** side of the CP-vs-AP choice - when a file is updated, all of its replicas will eventually be made consistent, but not in the exact same instant the change is made. (An earlier version of this note incorrectly guessed HDFS leans CP - this replaces that.)
+**Where does HDFS land: CP or AP?** Teacher's definition (in response to a student question about whether HDFS keeps all its replicas in sync instantly): "HDFS is not what we call strongly consistent. Instead, HDFS is highly available... Hadoop, as a system, chose the availability side of that. So Hadoop systems can be highly available, but they do not guarantee strong consistency."
+
+Expanded (correction): in CAP terms, HDFS is usually classified as **CP**, not AP. That's the answer most interviewers expect:
+
+| HDFS behavior | Why it points to CP |
+|---|---|
+| A single active **NameNode** holds all file metadata | One source of truth; there's no second copy of the metadata that could disagree |
+| A write goes through a **pipeline** to every replica before it is acknowledged | Once a file is written and closed, every reader sees the same data |
+| If the NameNode is down or cut off, clients can't read or write | It gives up availability rather than serve inconsistent data (NameNode HA reduces downtime but keeps one active NameNode) |
+
+What Evan was likely describing: HDFS is built to **tolerate failures**. If a DataNode dies, its blocks are **re-replicated in the background** to get back to 3 copies, and a file that is still being written may not be visible to readers until it is closed. That's fault tolerance and replication lag, not an AP design.
+
+**CP vs AP examples:**
+
+| CP (consistency first) | AP (availability first) |
+|---|---|
+| HDFS, HBase, ZooKeeper, etcd, traditional RDBMS with synchronous replication | Cassandra, DynamoDB (default eventually consistent reads), CouchDB, DNS |
+
+Interview line: *"HDFS favors consistency. It's CP: one NameNode is the source of truth, and if it's unavailable the file system stops rather than return inconsistent data. Replication gives fault tolerance, not eventual consistency of reads."*
 
 ---
 
@@ -214,6 +291,8 @@ This is the theoretical backbone behind why different distributed systems are bu
 Q. Does MapReduce perform all of its operations the same way?
 
 A. (Teacher's definition) In MapReduce, some operations are performed in memory, and other operations are performed on disk.
+
+---
 
 Q. What is Disk I/O?
 
@@ -230,30 +309,64 @@ Expanded: this distinction is the classic performance bottleneck story behind Ma
 
 ---
 
+## MapReduce Phases: Word Count
+
+Q. How does MapReduce work? Walk through word count.
+
+A.
+
+| Phase | What happens | Word count example |
+|---|---|---|
+| Input split | Each mapper gets one block/split of the input | Mapper 1 gets "a b a", Mapper 2 gets "b c" |
+| Map | Emit key/value pairs | (a,1) (b,1) (a,1) / (b,1) (c,1) |
+| Shuffle & sort | Group all values by key and send each key to one reducer (written to disk) | a -> [1,1], b -> [1,1], c -> [1] |
+| Reduce | Aggregate each key's values | (a,2) (b,2) (c,1) |
+| Output | Written to HDFS | One file per reducer |
+
+Expanded: MapReduce relies on **data locality**: YARN schedules each map task on a node that already holds that block ("move compute to the data"), so the input isn't shipped over the network. The shuffle is the expensive part, which is the same wide-dependency idea as a Spark shuffle.
+
+**Interview line:** "Mappers read local blocks and emit key/value pairs, the shuffle groups pairs by key and sends each key to one reducer, and reducers aggregate. For word count, map emits (word, 1) and reduce sums the ones."
+
+---
+
+## Consistency Models
+
+Q. What is the difference between strong and eventual consistency, and what is a quorum?
+
+A. **Strong consistency:** every read returns the latest acknowledged write. **Eventual consistency:** replicas may briefly return stale data, but converge if writes stop. A **quorum** system with N replicas, writing to W and reading from R of them, is strongly consistent for reads when **R + W > N** (the read set always overlaps the latest write).
+
+Expanded: e.g. Cassandra with N = 3, W = 2 (QUORUM), R = 2 (QUORUM): 2 + 2 > 3, so reads see the latest write. With R = 1, W = 1 it is faster and more available but only eventually consistent. This is the practical knob behind CP vs AP.
+
+---
+
 # HDFS Blocks
 
 Q. What size are HDFS blocks?
 
 A. (Teacher's definition) For a while, the default HDFS block size was 128 MB. Today, it's 256 MB.
 
-Expanded: HDFS doesn't store a file as one single unit - it splits each file into fixed-size chunks called **blocks**, and each of those blocks is what actually gets replicated across nodes (tying directly back into the Replication section above - each block gets its own 3 copies spread across different nodes, not the file as a whole). The default has grown over Hadoop's history (an earlier common default was 64 MB, then 128 MB, and now 256 MB) - reflecting that as disks, networks, and datasets have all gotten larger over time, bigger blocks mean fewer, larger chunks to track/coordinate per file, so it's worth treating this as "the commonly cited current default," not a fixed, unchangeable constant.
+Expanded (correction): the Apache Hadoop default block size (`dfs.blocksize`) is still **128 MB** (since Hadoop 2.x; it was 64 MB in Hadoop 1.x). 256 MB is a common **tuned** value on some clusters and distributions, not the default. Say 128 MB in an interview (this also matches `Training 0.md`).
+
+Expanded: HDFS doesn't store a file as one single unit - it splits each file into fixed-size chunks called **blocks**, and each of those blocks is what actually gets replicated across nodes (tying directly back into the Replication section above - each block gets its own 3 copies spread across different nodes, not the file as a whole). The default grew from 64 MB (Hadoop 1.x) to 128 MB (Hadoop 2.x and 3.x), and many clusters tune it higher - bigger blocks mean fewer, larger chunks to track/coordinate per file.
 
 | Era | Default HDFS block size |
 |---|---|
-| Earlier Hadoop versions | 64 MB |
-| "For a while" (teacher's phrasing) | 128 MB |
-| Today | 256 MB |
+| Hadoop 1.x | 64 MB |
+| Hadoop 2.x / 3.x (current default) | 128 MB |
+| Common tuned value | 256 MB (configured, not default) |
 
 | Concept | Meaning |
 |---|---|
 | Block | A fixed-size chunk that a file gets split into for storage in HDFS |
 | Why chunk into blocks at all | Lets a single large file be spread/replicated across many different nodes rather than needing to fit on one machine, and lets MapReduce/Spark process different blocks of the same file in parallel across the cluster |
 
+---
+
 Q. Is the HDFS block size fixed?
 
 A. (Teacher's definition) The block size can be edited in the Hadoop config.
 
-Expanded: 128 MB/256 MB are just defaults, not hard limits - the block size is a configurable cluster setting, so a team can tune it up or down depending on their data/workload (e.g. larger blocks for huge files to reduce per-block coordination overhead, smaller blocks if a workload needs finer-grained parallelism). This sets up the very next topic directly: choosing too small a block size, or storing files smaller than the block size, is exactly what leads into the Small File Problem below.
+Expanded: 128 MB is just the default, not a hard limit - the block size is a configurable cluster setting, so a team can tune it up or down depending on their data/workload (e.g. larger blocks for huge files to reduce per-block coordination overhead, smaller blocks if a workload needs finer-grained parallelism). This sets up the very next topic directly: choosing too small a block size, or storing files smaller than the block size, is exactly what leads into the Small File Problem below.
 
 ---
 
@@ -263,9 +376,9 @@ Q. What is the Small File Problem?
 
 A. (Teacher's definition) If you put a lot of small files on a Hadoop system, it's not only going to be inefficient for storage, it will also slow down data processing speeds.
 
-Expanded: this is the direct consequence of the two sections just above - HDFS blocks (128/256 MB) and the NameNode-style metadata coordinator implied by earlier sections are built around the assumption of relatively large files. A "small file" here means any file significantly smaller than the block size - every file, no matter how tiny, still consumes a full block-tracking metadata entry, so millions of small files bloat the amount of metadata the cluster's coordinator has to hold in memory, which is the storage-inefficiency half of the problem.
+Expanded: this is the direct consequence of the two sections just above - HDFS blocks (128 MB by default) and the NameNode-style metadata coordinator implied by earlier sections are built around the assumption of relatively large files. A "small file" here means any file significantly smaller than the block size - every file, no matter how tiny, still consumes a full block-tracking metadata entry, so millions of small files bloat the amount of metadata the cluster's coordinator has to hold in memory, which is the storage-inefficiency half of the problem.
 
-The processing-speed half comes from how MapReduce/Spark parallelize work: they typically launch one task per block/file. A single 256 MB file processes as one efficient task, but the same 256 MB spread across thousands of tiny files means thousands of tiny tasks - and the overhead of starting/scheduling/tearing down each task can end up costing more than the actual work being done, dragging overall job speed down even though the total data volume hasn't changed.
+The processing-speed half comes from how MapReduce/Spark parallelize work: they typically launch one task per block/file. A single 128 MB file processes as one efficient task, but the same 128 MB spread across thousands of tiny files means thousands of tiny tasks - and the overhead of starting/scheduling/tearing down each task can end up costing more than the actual work being done, dragging overall job speed down even though the total data volume hasn't changed.
 
 | Effect | Why it happens |
 |---|---|
@@ -284,9 +397,13 @@ A. (Teacher's definition) How big can you make a process?
 
 Expanded: framed this way, scalability is really asking "what's the ceiling on how much work/data a system can take on before it breaks down or stops being practical?" This connects directly back to the earlier HPC section - the whole reason distributed clusters exist is that a single machine has a hard ceiling on how big a process can get (limited CPU, RAM, disk on one box), while a distributed system raises that ceiling by spreading the process across many machines instead of one.
 
+---
+
 Q. What is Vertical Scalability?
 
 A. (Teacher's definition) Vertical Scalability - taking one system and improving its components to be able to handle more things.
+
+---
 
 Q. What is Horizontal Scalability?
 
@@ -318,6 +435,8 @@ Expanded: this connects Hadoop back to the OLAP/data warehouse material from `Tr
 
 This is the same "engine + storage" layering idea introduced with Databricks Delta Lake / DuckDB + Iceberg in `Training 5.md` - Hive is Hadoop's own native version of putting a warehouse-style interface over raw distributed file storage, just older and generally considered slower than modern alternatives (Spark SQL, Presto/Trino, or a cloud warehouse) per that same Training 5 note.
 
+---
+
 ## HiveQL
 
 Q. What is Hive SQL / HiveQL, and how does it actually run?
@@ -333,6 +452,8 @@ Expanded: this is the mechanical detail underneath the Hive table above - when s
 | YARN schedules | Resources for those MapReduce jobs across the cluster |
 | MapReduce executes | The actual distributed processing (including its disk I/O between stages) |
 
+---
+
 ## Metastore (General Definition)
 
 Q. What is a Metastore, generally?
@@ -340,6 +461,8 @@ Q. What is a Metastore, generally?
 A. (Teacher's definition) A Metastore is a system which is designed to store metadata (schemas - so column names and data types, indexes, etc).
 
 Expanded: this is the general concept the "Hive Metastore" is one specific implementation of - a metastore itself never holds the actual data (rows/files), only the *description* of that data: what columns exist, what type each column is, what indexes/partitions exist, and (per the sections above) where the underlying files actually live in storage. Separating "the data" from "the description of the data" is precisely what makes Schema on Read possible (below) - the metastore is the lookup table an engine consults to know how to interpret raw files as a structured table.
+
+---
 
 ## Hive Metastore
 
@@ -356,11 +479,15 @@ Expanded: the Metastore is Hive's metadata catalog - it stores the table definit
 
 **Why this matters going forward:** this is the reason "Hive Metastore" keeps showing up as a term even in fully modern lakehouse stacks that have nothing to do with running actual Hive/MapReduce queries - it's become a de facto standard *catalog format* that other tools adopted, independent of Hive's own (now-outdated) execution engine. Worth watching for this same idea to resurface around `Training 8.md`'s Hive + Spark Intro material.
 
+---
+
 Q. Are there other metastores besides Hive's?
 
 A. (Teacher's definition) Other metastores include: The AWS Glue Data Catalog.
 
 Expanded: this confirms the point just above - the "metastore" concept generalized beyond Hive itself. AWS Glue Data Catalog is Amazon's own managed metadata catalog, doing the same job (tracking table schemas, partitions, and file locations for data sitting in S3) that the Hive Metastore does for HDFS-based data - and it's actually **Hive-Metastore-API-compatible**, meaning tools built to talk to a Hive Metastore (Spark, Presto/Trino, Athena) can point at Glue's catalog instead without needing different code. This will come up again directly in `Training 21.md`'s AWS Glue coverage.
+
+---
 
 Q. Why do metastores matter so much in Big Data today?
 
@@ -411,6 +538,8 @@ Expanded: partitioning splits one logical table into multiple physical sub-files
 | Why it helps | Lets queries filtering on the partition column skip reading irrelevant partitions entirely (partition pruning) |
 | Common partition columns | Date, region, category - anything frequently filtered on and with a manageable number of distinct values |
 
+---
+
 Q. What is Bucketing?
 
 A. (Teacher's definition) Bucketing is another way of subdividing a table - it's not done at the file level but rather involves a hash being applied to particular rows of the table.
@@ -426,7 +555,9 @@ Expanded: where partitioning splits a table by the literal value of a column (cr
 
 **Terminology note worth double-checking:** the teacher's phrasing ("not done at the file level") is worth confirming in context - in most standard Hive/Spark documentation, bucketing *does* still result in a fixed number of physical files per partition (one file per bucket), it's just that which file a row lands in is determined by a hash rather than by the literal partition-column value the way partitioning works. Worth clarifying with Evan if this comes up again, since the distinction that matters most for an interview is *hash-based fixed-count buckets* vs. *value-based variable-count partitions*, not necessarily "file-level vs. not."
 
-**What actually gets hashed?** A student's follow-up question in class assumed bucketing always hashes an entire row - teacher's clarification: "A hash can be of literally anything. So it can be from just the value of an individual cell. It can be an entire row. It can be an entire column. It just has to be a string before you pass it to the hashing algorithm." So bucketing by a single column (e.g. hashing just the `date` value) is completely normal - the hash input isn't required to be the whole row, just whatever column(s) you choose to bucket by, converted to a string first if it isn't one already.
+**What actually gets hashed?** A student's follow-up question in class assumed bucketing always hashes an entire row - teacher's clarification: "A hash can be of literally anything. So it can be from just the value of an individual cell. It can be an entire row. It can be an entire column. It just has to be a string before you pass it to the hashing algorithm." Expanded (correction): hash functions work on **bytes**, not specifically strings, and Spark (Murmur3) and Hive hash the typed column values directly; nothing has to be converted to a string first. Also worth knowing: Spark bucketing and Hive bucketing use **different hash functions**, so a table bucketed by one engine is not treated as bucketed by the other.
+
+So bucketing by a single column (e.g. hashing just the `date` value) is completely normal - the hash input isn't required to be the whole row, just whatever column(s) you choose to bucket by, converted to a string first if it isn't one already.
 
 ---
 
@@ -479,9 +610,15 @@ Q. What is Avro?
 
 A. (Teacher's definition) Avro - basically a compressed JSON file with a flexible schema.
 
+Expanded (correction): Avro is **not** JSON. It is a compact **binary, row-based** format whose **schema is written in JSON** and stored in the file header. Compression is an optional codec (e.g. Snappy, Deflate) applied to blocks of records. The "JSON-like" part is the flexible, nested schema, not the data encoding.
+
+---
+
 Q. When should you use Parquet/ORC vs. JSON/Avro?
 
 A. (Teacher's definition) Parquet and ORC are good for batch processing, JSON and Avro are good for streaming.
+
+---
 
 Q. What's a second advantage Avro has, beyond compression?
 
@@ -500,6 +637,8 @@ The batch-vs-streaming split follows directly from row-based vs. columnar layout
 
 This connects directly forward to `Training 13.md`'s Kafka coverage (where individual streamed messages are the unit of work, matching Avro/JSON's row-at-a-time model) and back to the ORC/Parquet section above (matching Hive/batch-style analytical queries scanning large historical tables).
 
+---
+
 ## Schema Evolution: Beyond Avro
 
 Q. Is Avro the only format that handles schema evolution?
@@ -513,27 +652,33 @@ Expanded: this broadens the schema-evolution concept beyond just Avro - it's a c
 | **Avro** | Row-based serialization format | Embeds/versions the schema alongside individual records - covered above |
 | **Protobuf** | Row-based serialization format | Google's binary serialization format, similar role to Avro - schema defined separately (`.proto` files) with built-in support for adding/removing fields over time |
 | **Iceberg** | Open Table Format | Tracks schema changes at the *table* level (on top of underlying Parquet/ORC/Avro files) - lets columns be added/renamed/dropped without rewriting existing data files |
-| **Delta** (Delta Lake) | Open Table Format | Same table-level schema evolution/enforcement role as Iceberg, but tied to Databricks' Delta Lake (`Training 5.md`) |
+| **Delta** (Delta Lake) | Open Table Format | Same table-level schema evolution/enforcement role as Iceberg. Created by Databricks but open source (Apache 2.0, Linux Foundation); Databricks adds proprietary features on top (`Training 5.md`) |
 
 **Why this distinction matters:** Avro/Protobuf solve schema evolution at the *individual record/message* level (useful for streaming, per the section above), while Iceberg/Delta solve it at the *whole table* level (useful for a data lakehouse's Bronze/Silver/Gold tables, `Training 5.md`'s Medallion Architecture) - a real pipeline commonly uses both together, e.g. Avro-encoded Kafka messages landing into Delta/Iceberg tables downstream.
 
 ---
 
-# Agent Generated Notes
+# Additional Notes (from class)
 
 ## The Small File Problem in Practice: JPMorgan Chase Story
 
-Teacher's definition (real-world account): "I actually have personal experience with the small file problem. This was actually something that I encountered while I was at JPMorgan Chase... I was in charge of their data archival system... our output was usually between 500 gigabytes and one and a half terabytes for one file. But the system that we had partitioned that data so that the partitions were only one megabyte in size... What would happen is that I would start the archival job and a few hundred of those partitions would get archived, but then one would fail. And if one failed, the entire job failed... Ultimately, the method that I arrived on was Spark's repartition method... I took these one megabyte partitions and turned them into 10 gigabyte partitions. And as soon as they were 10 gigabyte partitions, they would all archive, no problem. And we archived our entire backlog in a matter of like two weeks."
+Q. What is a real-world example of the small file problem?
+
+A. (Teacher's definition, real-world account) "I actually have personal experience with the small file problem. This was actually something that I encountered while I was at JPMorgan Chase... I was in charge of their data archival system... our output was usually between 500 gigabytes and one and a half terabytes for one file. But the system that we had partitioned that data so that the partitions were only one megabyte in size... What would happen is that I would start the archival job and a few hundred of those partitions would get archived, but then one would fail. And if one failed, the entire job failed... Ultimately, the method that I arrived on was Spark's repartition method... I took these one megabyte partitions and turned them into 10 gigabyte partitions. And as soon as they were 10 gigabyte partitions, they would all archive, no problem. And we archived our entire backlog in a matter of like two weeks."
 
 Expanded: a concrete, real production illustration of the Small File Problem section above - the archival job wasn't failing because of bad code, it was failing because of file architecture: thousands of 1MB partitions meant thousands of chances for a single archival step to fail, and any one failure killed the whole job (with no simple retry available, per additional constraints the teacher didn't detail). The fix wasn't smarter code, it was consolidating file count - using Spark's `repartition` method (an "odd choice" per the teacher, since `coalesce` is the more commonly expected tool for reducing partition count, but benchmarks in this specific case showed `repartition` performed better) to go from many tiny partitions to few large ones, which is exactly the "compact many small files into fewer, larger files" fix already noted in the Small File Problem section above, just with real numbers attached (500GB-1.5TB files, 1MB partitions -> 10GB partitions, a 2-week backlog cleared once fixed). Worth remembering `repartition` vs. `coalesce` as a concrete pair of Spark methods to investigate further once Spark coverage begins next week.
 
 **Also worth noting (teacher's aside):** the small file problem is largely obsolete for teams using an object store (S3, ADLS, GCS) instead of raw HDFS - "the nice thing about cloud is that all that stuff is the company's problem," since the cloud provider handles fault tolerance/replication internally and doesn't expose the same fixed-block-size architecture that makes small files expensive on HDFS specifically.
 
+Expanded (correction): only half of this is true. The cloud removes the **NameNode memory** part of the problem, but small files still hurt on S3/ADLS/GCS: every file costs a separate GET/LIST request (latency and per-request cost), Spark still schedules roughly one task per small file, and Delta/Iceberg metadata grows with file count. That is exactly why compaction exists (Delta `OPTIMIZE`, auto-compaction, Iceberg `rewrite_data_files`). Aim for files of roughly 128 MB to 1 GB.
+
 ---
 
 ## Optimization Principle: Less Work, Not Faster Work
 
-Teacher's definition: "Most optimizations are actually not faster methods to do something. They're methods that involve less work at all."
+Q. What is the key principle behind most optimizations?
+
+A. (Teacher's definition) "Most optimizations are actually not faster methods to do something. They're methods that involve less work at all."
 
 Expanded: this was stated directly as the takeaway from the "why is Spark faster than MapReduce" discussion (see the MapReduce Memory vs. Disk section above) - a live correction of a common misconception. A student asked whether Spark's speed advantage just comes down to memory being faster than disk; the teacher's answer was explicitly that this reasoning is wrong: "The reason that Spark is faster than MapReduce is because there are a bunch of data transfers that just simply don't happen in a Spark job, but which need to happen in a MapReduce job" - it's not that the same operations run faster, it's that Spark skips operations MapReduce is forced to do (the repeated disk<->memory round-trips). The same principle was illustrated with a second example: querying an unpartitioned billion-row sales table for one month's data means scanning all billion rows (a full table scan), while querying a *partitioned* table means the engine only has to look at that one partition - e.g. 100,000 rows instead of a billion - finishing much faster not because each row is processed any quicker, but because 99.99% of the rows were never touched at all. This is a generalizable interview-ready framing worth remembering: **first ask "can I avoid doing this work entirely?" before asking "can I do this work faster?"**
 
@@ -541,7 +686,9 @@ Expanded: this was stated directly as the takeaway from the "why is Spark faster
 
 ## Schema Evolution: Naming Gotcha
 
-Teacher's definition: "It is Schema Evolution and it is not Schema Evaluation. It's very common for people to say Schema Evaluation, but that is quickly dispelled when you think about what you're actually doing."
+Q. Is it "schema evolution" or "schema evaluation"?
+
+A. (Teacher's definition) "It is Schema Evolution and it is not Schema Evaluation. It's very common for people to say Schema Evaluation, but that is quickly dispelled when you think about what you're actually doing."
 
 Expanded: worth flagging as a common mix-up - the correct term is **Schema Evolution** (the schema *evolves*/changes over time as source systems add, remove, or rename columns, per the Schema Evolution section above), not "Schema Evaluation." The teacher's reasoning for why "Evolution" is the right word: the system is adapting to a schema that is genuinely changing over time (evolving), not just checking/evaluating a fixed schema once. Small thing, but exactly the kind of terminology slip an interviewer might notice.
 
@@ -549,7 +696,9 @@ Expanded: worth flagging as a common mix-up - the correct term is **Schema Evolu
 
 ## Introduction to Spark
 
-Teacher's definition: "Spark is the big giant technology in data engineering. When Spark came out, it basically revolutionized the entire field. And while open source regular Spark is not necessarily the most important thing anymore, every single modern data processing system either is exactly Spark or it is absolutely based on Spark."
+Q. What is Spark, and why did it replace MapReduce?
+
+A. (Teacher's definition) "Spark is the big giant technology in data engineering. When Spark came out, it basically revolutionized the entire field. And while open source regular Spark is not necessarily the most important thing anymore, every single modern data processing system either is exactly Spark or it is absolutely based on Spark."
 
 Expanded: this is the teacher's first formal introduction of Spark in this training (setting up the following week's material, per the teacher's own framing: "today we've basically taken everything we learned this week, and it's all been leading up to when we talk about Spark"). It naturally continues the MapReduce discussion above - Spark is presented as MapReduce's direct successor and replacement, not an unrelated new technology.
 
@@ -561,10 +710,19 @@ Expanded: this is the teacher's first formal introduction of Spark in this train
 | Google Cloud Dataproc | Written in Apache Beam syntax - Beam is a syntax/API layer, not a processing engine itself, and Beam's backend is based on Spark |
 | Databricks | Founded by some of the original Spark developers; the original product concept was literally "Spark plus a data warehouse in a single cloud service." Per the teacher: "Databricks is Spark. Spark is Databricks. Everything that you do in Databricks is based on Spark." |
 
+Expanded (correction - Dataproc row): **Dataproc** is Google's managed Spark/Hadoop service: you run normal Spark jobs on it, no Beam involved. **Dataflow** is Google's managed **Apache Beam** service, and it runs on Google's own Dataflow runner. Beam is a portable API that *can* run on Spark or Flink runners, but it is not "based on Spark".
+
+| GCP service | What it is | You write |
+|---|---|---|
+| Dataproc | Managed Spark/Hadoop clusters (and serverless Spark) | Normal PySpark/Scala Spark |
+| Dataflow | Managed Apache Beam runner (batch + streaming) | Beam pipelines (Java/Python) |
+
 **Why Spark took over - two reasons (teacher's definition):**
 
 1. **Speed** - "Before Spark came out, we had MapReduce. MapReduce did some operations on disk and others in memory. In Spark, we did all of our processing in memory. Turns out if you do that, your average processing time is about 100 times faster, give or take." (See the MapReduce Memory vs. Disk section above, and the Optimization Principle note above for *why* this is true - it's the elimination of disk round-trips, not memory being inherently faster.)
-2. **The DataFrame API (arrived with Spark 2.0)** - Spark 1.0's original data structure was the **RDD** (Resilient Distributed Dataset) - "a large distributed list of values or a distributed array, basically," conceptually the same lineage as a plain Python list processed with `map`/`filter`/`reduce`, just distributed across a cluster at a much bigger scale (the same lineage MapReduce itself came from, per the MapReduce section above). With Spark 2.0, the Spark developers noticed Python's Pandas library becoming popular for data processing and built an equivalent into Spark itself - "Spark SQL," built around a **DataFrame**, that behaves like a Pandas DataFrame but at distributed scale. Per the teacher: "Spark SQL is the underlying thing of pretty much all data processing technologies right now. In an average data engineering job... it is probably either going to be working with a Spark DataFrame or some other framework's equivalent of a Spark DataFrame."
+2. **The DataFrame API** - Spark 1.0's original data structure was the **RDD** (Resilient Distributed Dataset) - "a large distributed list of values or a distributed array, basically," conceptually the same lineage as a plain Python list processed with `map`/`filter`/`reduce`, just distributed across a cluster at a much bigger scale (the same lineage MapReduce itself came from, per the MapReduce section above). With Spark 2.0, the Spark developers noticed Python's Pandas library becoming popular for data processing and built an equivalent into Spark itself - "Spark SQL," built around a **DataFrame**, that behaves like a Pandas DataFrame but at distributed scale. Per the teacher: "Spark SQL is the underlying thing of pretty much all data processing technologies right now. In an average data engineering job... it is probably either going to be working with a Spark DataFrame or some other framework's equivalent of a Spark DataFrame."
+
+Expanded (correction): two dates and one claim need fixing. DataFrames arrived in **Spark 1.3** (2015, with Spark SQL); **Spark 2.0** (2016) unified the DataFrame and Dataset APIs and introduced `SparkSession`. And Spark does not do *all* processing in memory: it spills to disk when data doesn't fit and writes shuffle files to local disk. Its speed comes from avoiding HDFS writes **between** stages, optional in-memory caching, and DAG/query optimization (see the Optimization Principle note above). The "100 times faster" figure is a best-case benchmark for iterative in-memory workloads, not a typical number.
 
 **Spark is a processing engine, not a storage system (important distinction):**
 
@@ -578,226 +736,6 @@ Expanded: this directly parallels the earlier Hadoop Cluster Components table (H
 
 # Homework Assignment: Weekend Project - Containerized Sales Report Pipeline
 
-## Objective
-
-Build a small **containerized data pipeline** that takes a raw CSV file containing sales transactions and produces **one final deliverable: `sales_report.csv`**.
-
-The project should demonstrate: **Docker + Python + Pandas + SQL + Bash**
-
-Expected completion time: **1-3 hours**.
-
-## Scenario
-
-A company sends you a raw sales file containing:
-
-```text
-transaction_id
-transaction_date
-customer
-product
-category
-quantity
-unit_price
-```
-
-Example:
-
-```csv
-transaction_id,transaction_date,customer,product,category,quantity,unit_price
-T001,2026-09-01,Alice,Laptop,Electronics,1,1200
-T002,2026-09-01,Bob,Mouse,Electronics,3,25
-T003,2026-09-02,Alice,Desk,Furniture,1,450
-T004,2026-09-02,Carol,Chair,Furniture,4,125
-T005,2026-09-03,David,Monitor,Electronics,2,300
-T006,2026-09-03,Alice,Keyboard,Electronics,2,75
-T007,2026-09-04,Bob,Desk,Furniture,1,450
-T008,2026-09-04,Carol,Laptop,Electronics,1,1200
-```
-
-Your job is to build a pipeline that processes this data and creates a business report.
-
-## Required Architecture
-
-```text
-sales.csv
-    │
-    ▼
-Bash Script
-    │
-    ▼
-Docker
-    │
-    ▼
-Python + Pandas
-    │
-    ├── Clean/transform data
-    │
-    ▼
-PostgreSQL
-    │
-    ├── Store processed transactions
-    │
-    ├── Execute SQL analytics
-    │
-    ▼
-Python
-    │
-    ▼
-sales_report.csv
-```
-
-## Requirements
-
-**1. Docker**
-
-Use Docker Compose to run at least:
-
-```text
-PostgreSQL
-```
-
-The database must be accessible to the Python pipeline. Your `docker-compose.yml` should configure the database, credentials, port, and a persistent volume.
-
-**2. Bash**
-
-Create `run_pipeline.sh`. The instructor should be able to run:
-
-```bash
-./run_pipeline.sh
-```
-
-and have the pipeline execute. The Bash script should perform at least basic tasks such as starting the Docker environment and running the Python program.
-
-**3. Python/Pandas**
-
-Your Python program must:
-
-```text
-Read sales.csv
-        ↓
-Clean/validate the data
-        ↓
-Create sales_amount
-        ↓
-Load the processed data into PostgreSQL
-```
-
-Calculate: `sales_amount = quantity * unit_price`
-
-At least one Pandas operation other than reading the CSV must be demonstrated, such as:
-
-```python
-df["category"] = df["category"].str.strip().str.title()
-```
-
-or filtering invalid records.
-
-**4. SQL**
-
-Store the processed transactions in a PostgreSQL table.
-
-Your final report must be generated using a SQL query containing `GROUP BY`, `SUM()`, and `ORDER BY`. The report should show total sales by category.
-
-For example:
-
-```text
-category       total_units    total_revenue
-Electronics    9              3225.00
-Furniture      6              1400.00
-```
-
-Do not hard-code these results.
-
-**5. Final deliverable**
-
-The pipeline must generate `output/sales_report.csv`. This is the **single artifact submitted for grading**.
-
-It should contain:
-
-```csv
-category,total_units,total_revenue
-Electronics,9,3225.00
-Furniture,6,1400.00
-```
-
-Your exact results will depend on your input data.
-
-## Suggested Project Structure
-
-```text
-weekend_project/
-│
-├── sales.csv
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── run_pipeline.sh
-├── pipeline.py
-│
-└── output/
-    └── sales_report.csv
-```
-
-The Python application itself should also be containerized:
-
-```text
-┌──────────────────────────────┐
-│ Docker Compose               │
-│                              │
-│   ┌───────────────┐          │
-│   │ Python/Pandas │          │
-│   │ pipeline      │          │
-│   └───────┬───────┘          │
-│           │                   │
-│           ▼                   │
-│   ┌───────────────┐          │
-│   │ PostgreSQL    │          │
-│   └───────────────┘          │
-└──────────────────────────────┘
-             │
-             ▼
-    output/sales_report.csv
-```
-
-## Live Demonstration
-
-Students should be prepared to demonstrate the project without modifying it beforehand. The instructor may ask them to:
-
-1. Delete `output/sales_report.csv`.
-2. Run `./run_pipeline.sh`.
-3. Show the running Docker containers.
-4. Connect to PostgreSQL and show the loaded table.
-5. Show several rows using `SELECT`.
-6. Explain the Pandas transformation.
-7. Show the SQL aggregation that creates the report.
-8. Open the newly generated `sales_report.csv`.
-9. Modify or add one transaction to `sales.csv`.
-10. Run the pipeline again and demonstrate that the report changes appropriately.
-
-The last step is particularly useful for verifying the project actually works end-to-end rather than the submitted CSV simply being manually created.
-
-## Submission
-
-Submit only `sales_report.csv`. However, **retain the complete project on your machine** - you may be asked to demonstrate the pipeline live and explain any part of the implementation.
-
-The essential success criterion is:
-
-```text
-Raw CSV
-   ↓
-Bash
-   ↓
-Dockerized Python/Pandas
-   ↓
-PostgreSQL
-   ↓
-SQL aggregation
-   ↓
-sales_report.csv
-```
-
-A successful project therefore demonstrates that the student can connect several of the technologies from the course into **one functioning data-engineering pipeline**, rather than completing five unrelated exercises.
-
-**Ties directly to material already in this file:** the Docker section connects to the containerization concepts covered earlier (`Training 3.md`'s Docker Hub/image deployment), the PostgreSQL step is the same warehouse-building pattern from `Training 4.md`/`Training 5.md`, and the required `GROUP BY`/`SUM()`/`ORDER BY` SQL aggregation is a direct application of `Training 5.md`'s SQL Fundamentals coverage - this project is essentially a compressed, end-to-end rehearsal of the whole pipeline stack covered across the course so far (Bash -> Docker -> Python/Pandas -> SQL -> deliverable).
+The full weekend project prompt (Bash -> Docker Compose -> Python/Pandas -> PostgreSQL -> SQL aggregation -> `output/sales_report.csv`) is in `homework/assignment/Homework - Training 6 (Assignment).md`.
 
 ---

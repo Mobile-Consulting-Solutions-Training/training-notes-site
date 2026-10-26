@@ -9,7 +9,7 @@ Teacher: Evan Flint
 
 Syllabus Day 25 (per file numbering; Wed Oct 14). Topics: making the Citi Bike pipeline **incremental** (batch IDs, landing table, MERGE, stored procedure, checkpoint), then bringing the existing Step Functions orchestration under **Terraform** and running it. More filled in as class goes.
 
-Note: I joined about an hour late, so this recording starts mid-demo (0:00 = 2:14 PM). The first hour of class can be filled in from the full recording once it's posted.
+Note: I joined about an hour late, so the class walkthrough below starts mid-demo. Evan's shared chat (further down) fills in part of the first hour.
 
 ---
 
@@ -35,7 +35,9 @@ Q. What is idempotency?
 
 A. (From class) "Verify idempotency" was the final validation step before orchestration, so the pipeline "continuously loads data into Redshift" safely.
 
-Expanded: An operation is **idempotent** if running it once or many times gives the same result. For a pipeline, re-running a batch (after a failure, a retry or a scheduler hiccup) must not double the rows. Today's design gets that by loading into a **landing table** tagged with a `batch_id`, then using **MERGE** into the canonical table: rows that already exist are updated or skipped, and only new rows are inserted. Same idea as `INSERT … ON CONFLICT DO NOTHING` from the Training 22 homework.
+Expanded: An operation is **idempotent** if running it once or many times gives the same result. For a pipeline, re-running a batch (after a failure, a retry or a scheduler hiccup) must not double the rows. Today's design gets that by loading into a **landing table** tagged with a `batch_id`, then using **MERGE** into the canonical table: rows that already exist are updated or skipped, and only new rows are inserted. Same idea as `INSERT … ON CONFLICT DO NOTHING` from the Training 22 homework. (In the final working procedure the insert step was written as `INSERT … WHERE NOT EXISTS` rather than `MERGE`: see "The load SQL" below.) General error-handling and idempotency notes: Training 0.
+
+**Interview line (idempotent incremental load):** "Each run gets a batch window and a batch ID. The batch lands in a landing table, I deduplicate it on the business key with `ROW_NUMBER()`, then MERGE or insert-where-not-exists into the target in one transaction, and only after the validations pass do I advance the checkpoint. Re-running the same batch changes nothing."
 
 ---
 
@@ -69,13 +71,82 @@ Design lesson: **don't add a service just because the AI suggested it.** Ask "wh
 
 ---
 
-# Agent Generated Notes (from Class Recording, live)
+# The Load SQL (landing → canonical → Gold)
 
-Source: near-live transcript of today's OBS recording (`transcriptions/Training 24 – 2026-10-14 14-14-38/live_transcript.md`), Whisper "small", no speaker labels. Timestamps are from the start of the recording (0:00 = 2:14 PM).
+Q. What does the stored procedure's load SQL actually look like?
+
+A. (From my homework rebuild of the class procedure; table names there are the non-`_v2` versions.) Deduplicate the batch on the business key with `QUALIFY ROW_NUMBER()`, then insert only keys that aren't in the target yet. Evan used `INSERT … WHERE NOT EXISTS` instead of `MERGE` because Redshift kept rejecting the `MERGE` syntax. For insert-only data, both give the same result.
+
+```sql
+CREATE OR REPLACE PROCEDURE public.sp_process_citibike_batch(p_batch_id IN VARCHAR)
+AS $$
+BEGIN
+    -- 1. New observations into the canonical table (one row per business key)
+    INSERT INTO public.citibike_station_snapshot (station_id, snapshot_ts, bikes_available, docks_available /* , ... */)
+    SELECT station_id, snapshot_ts, bikes_available, docks_available /* , ... */
+    FROM (
+        SELECT *
+        FROM public.citibike_station_snapshot_landing
+        WHERE batch_id = p_batch_id
+          AND station_id IS NOT NULL AND snapshot_ts IS NOT NULL
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY station_id, snapshot_ts
+            ORDER BY station_name DESC NULLS LAST, capacity DESC NULLS LAST
+        ) = 1
+    ) src
+    WHERE NOT EXISTS (
+        SELECT 1 FROM public.citibike_station_snapshot tgt
+        WHERE tgt.station_id = src.station_id AND tgt.snapshot_ts = src.snapshot_ts
+    );
+
+    -- 2. Missing dates into gold.dim_date      (same NOT EXISTS pattern)
+    -- 3. Missing stations into gold.dim_station (latest row per station via QUALIFY)
+    -- 4. Missing fact rows into gold.fact_station_snapshot (NOT EXISTS on station_id + snapshot_ts)
+END;
+$$ LANGUAGE plpgsql;
+```
+
+The wrapper `sp_complete_citibike_batch(p_batch_id, p_window_end)` then: raises an error if the batch has no landing rows → `CALL sp_process_citibike_batch` → raises if Gold is missing any canonical row → raises if `p_window_end` would move the checkpoint **backwards** → `UPDATE` the checkpoint. Any `RAISE EXCEPTION` rolls back the whole call, so the checkpoint never advances on a failed batch.
+
+Expanded: the same step written as a Redshift `MERGE`. Stage the deduplicated batch first, then merge:
+
+```sql
+CREATE TEMP TABLE batch_src AS
+SELECT *
+FROM public.citibike_station_snapshot_landing_v2
+WHERE batch_id = '<batch_id>'
+QUALIFY ROW_NUMBER() OVER (PARTITION BY station_id, snapshot_ts ORDER BY station_name DESC NULLS LAST) = 1;
+
+MERGE INTO public.citibike_station_snapshot_v2
+USING batch_src AS src
+ON  public.citibike_station_snapshot_v2.station_id  = src.station_id
+AND public.citibike_station_snapshot_v2.snapshot_ts = src.snapshot_ts
+WHEN MATCHED THEN UPDATE SET
+     bikes_available = src.bikes_available,
+     docks_available = src.docks_available
+WHEN NOT MATCHED THEN INSERT (station_id, snapshot_ts, bikes_available, docks_available)
+     VALUES (src.station_id, src.snapshot_ts, src.bikes_available, src.docks_available);
+```
+
+| Redshift `MERGE` rule | What it means here |
+|---|---|
+| A target row may match **only one** source row | Duplicate keys in landing make `MERGE` fail, so deduplicate first (the doubled `COPY` in my homework, 15,112 rows vs 7,556 unique, would have broken it) |
+| `MERGE … REMOVE DUPLICATES` is a simplified form | Updates matches and inserts the rest, using the source's columns, with no `WHEN` clauses to write |
+| Grammar is stricter than Snowflake or Delta (e.g. no extra conditions on `WHEN MATCHED`) | Patterns copied from other warehouses often fail with "unexpected input". Check the Redshift docs |
+
+| | `INSERT … WHERE NOT EXISTS` | `MERGE` |
+|---|---|---|
+| New keys | Inserted | Inserted |
+| Existing keys | Left alone | Updated (or deleted) |
+| Fits | Insert-only facts like station snapshots | Dimensions and records that change (SCD1, CDC) |
+
+**Interview line:** "MERGE is an upsert: match source to target on the business key, update the matches, insert the rest. Before merging I deduplicate the source with ROW_NUMBER, because Redshift fails if two source rows match the same target row." See Training 21 for QUALIFY / ROW_NUMBER.
 
 ---
 
-## The incremental pipeline, step by step (0:00–0:34)
+# Class Walkthrough: Automating the Incremental Pipeline
+
+## The incremental pipeline, step by step
 
 Evan worked from an AI-generated package, `citybike-incremental-v2.zip`, unzipped to `/tmp`. Steps:
 
@@ -93,7 +164,7 @@ Evan worked from an AI-generated package, `citybike-incremental-v2.zip`, unzippe
 | 10 | Add a checkpoint, then automate with Step Functions | |
 
 **Step 7, what the merge does, in one transaction:**
-1. `MERGE` landing observations into `public.citibike_station_snapshot_v2` (the canonical table).
+1. `MERGE` landing observations into `public.citibike_station_snapshot_v2` (the canonical table). (The final working version used deduplicate + `INSERT … WHERE NOT EXISTS`; see "The load SQL" above.)
 2. Insert any missing calendar dates into `gold.dim_date`.
 3. Insert new stations and update station metadata in `gold.dim_station`.
 4. Insert new observations into the Gold fact snapshot table.
@@ -106,7 +177,7 @@ Doing it all in one transaction means Gold is never half-updated: either the who
 - **Glue job failed: "missing required arguments".** The incremental jobs need parameters (the batch window and batch ID). Clicking "Run" in the console doesn't pass them, so Evan started the job from the CLI with `--arguments` instead.
 - **Jobs not showing in the Glue UI.** The incremental jobs had run IDs but didn't appear in the main job list. Evan found them another way. (Worth checking the region first: it wasn't the cause here, but it often is.)
 - **Tip from a student:** in a Glue job run, select it and click **View details**. The page updates live, so you don't have to keep clicking refresh.
-- **Redshift `MERGE` syntax errors.** The AI kept going back and forth on `MERGE INTO` syntax, and the query editor showed "unexpected input". It eventually ran. Redshift's `MERGE` is stricter than Postgres or Snowflake, so check the Redshift docs when it complains.
+- **Redshift `MERGE` syntax errors.** The AI kept going back and forth on `MERGE INTO` syntax, and the query editor showed "unexpected input". Redshift's `MERGE` is stricter than Postgres or Snowflake, so check the Redshift docs when it complains. The specific rules (one source row per target row, so deduplicate first; no extra conditions on `WHEN MATCHED`) are in "The load SQL" above. The final procedure avoided `MERGE` altogether.
 - **Query editor v2 runs only the highlighted text.** If anything is highlighted, only that part runs. Deselect everything to run the whole script. (Evan: "the mouse should be a completely optional extra when it comes to computer programming.")
 - **The AI gave the `CALL` before the `CREATE PROCEDURE`.** Create first, then call.
 
@@ -114,7 +185,7 @@ On waiting for jobs: "My favorite part of programming, waiting." Big data jobs c
 
 ---
 
-## Automating it: checkpoint and wrapper procedure (0:34–0:39)
+## Automating it: checkpoint and wrapper procedure
 
 - Scheduling the existing incremental jobs every 5 minutes as-is would either **repeat old batches** or **leave gaps**, because nothing tracked which window was done. Hence the **durable checkpoint**, plus a fresh batch window generated for each execution.
 - The checkpoint advances **only after** the stored procedure and the validations succeed.
@@ -123,7 +194,7 @@ On waiting for jobs: "My favorite part of programming, waiting." Big data jobs c
 
 ---
 
-## Terraform: importing existing Step Functions resources (0:39–1:09)
+## Terraform: importing existing Step Functions resources
 
 The Step Functions state machine (`citibike-class-orchestration`) already existed, created before Terraform was involved. To manage it with Terraform:
 
@@ -137,6 +208,10 @@ The Step Functions state machine (`citibike-class-orchestration`) already existe
 | Edit `main.tf` | Point the state machine at the **incremental** Glue jobs instead of the old ones; add the runtime arguments (Redshift workgroup, etc.) | |
 | Plan + apply | `terraform plan -out <file>` then `terraform apply <file>` | Applies exactly the saved plan |
 
+Q. How do you bring existing AWS resources under Terraform?
+
+A. (From class) Write the matching resource blocks, `terraform import` each real resource into state, then run `terraform plan`. "No changes" means the code matches reality.
+
 Expanded: **Terraform state** is Terraform's record of which real AWS resources belong to which blocks in your code. Without state, Terraform assumes nothing exists, and `apply` would try to create duplicates. `terraform import` connects existing resources to the code. That's the usual way to adopt Terraform for infrastructure first built by clicking or with the CLI.
 
 What made it take over an hour:
@@ -147,28 +222,30 @@ What made it take over an hour:
 
 Result: `Apply complete`. Infrastructure for an automated incremental pipeline is deployed. **Ingestion (the Lambda) already runs independently every 5 minutes**, and Step Functions orchestrates the processing (Bronze → Silver → Redshift → merge/Gold → checkpoint).
 
-Break at 1:10.
-
 ---
 
-## After break: first controlled Step Functions run (1:20–)
+## First controlled Step Functions run
 
 - Plan: run **one controlled execution** before enabling the schedule, then verify the database.
 - Started with `aws stepfunctions start-execution`. Evan suggested watching it in the **Step Functions console**: it shows each state turning green or red.
 - The execution **failed immediately (3:36 PM)**: permission denied. "Every frustrating problem in the cloud ultimately comes down to permissions errors." The Step Functions role needs permission for each service it calls: `glue:StartJobRun` / `glue:GetJobRun` on the jobs, `redshift-data:ExecuteStatement` / `DescribeStatement` for the procedure call, and so on.
 
-- **Fix 1 (1:25–1:28):** the failure was in `PrepareBatch`: `permission denied for relation citibike_pipeline_checkpoint`. The coordinator Lambda logs in to Redshift as the database user **`IAMR:CitiBikeBatchCoordinatorRole`**. Redshift creates that user automatically for the IAM role, but it has no table privileges until you `GRANT` them. Evan found the exact user name in Redshift query history / `pg_user`, because the AI kept guessing it wrong.
-- **Retry (1:28–1:34):** Bronze → Silver ✅, Silver → Redshift ✅, then the **last step failed**: permission denied again. The coordinator's Redshift user could read the checkpoint table but **not the landing table** that the completion procedure uses. Fix: more `GRANT SELECT …` statements in Redshift.
-- **Redrive from failure (1:36):** in the Step Functions console, **Redrive** restarts the execution from the failed state, so the two Glue jobs that already succeeded didn't run again. Before redriving, Evan checked that the **checkpoint hadn't advanced**, which it shouldn't have, since the batch never completed.
+- **Fix 1:** the failure was in `PrepareBatch`: `permission denied for relation citibike_pipeline_checkpoint`. The coordinator Lambda logs in to Redshift as the database user **`IAMR:CitiBikeBatchCoordinatorRole`**. Redshift creates that user automatically for the IAM role, but it has no table privileges until you `GRANT` them. Evan found the exact user name in Redshift query history / `pg_user`, because the AI kept guessing it wrong.
+- **Retry:** Bronze → Silver ✅, Silver → Redshift ✅, then the **last step failed**: permission denied again. The coordinator's Redshift user could read the checkpoint table but **not the landing table** that the completion procedure uses. Fix: more `GRANT SELECT …` statements in Redshift.
+- **Redrive from failure:** in the Step Functions console, **Redrive** restarts the execution from the failed state, so the two Glue jobs that already succeeded didn't run again. Before redriving, Evan checked that the **checkpoint hadn't advanced**, which it shouldn't have, since the batch never completed.
 - **Result: green across the board.** "The first end-to-end Citi Bike incremental pipeline execution has finally succeeded."
 
-### Validation after the first successful run (1:37–1:38)
+### Validation after the first successful run
 
 | Check | Expected | Result |
 |---|---|---|
 | Checkpoint audit: last completed batch / updated at | Updated by this run | Last completed 19:33 UTC, updated 19:51 UTC (about a minute before) ✅ |
 | Canonical row count vs Gold fact row count | Equal | Equal ✅ |
 | Duplicate observations query | 0 rows | 0 rows ✅, so idempotency holds |
+
+Q. Why do AWS services need SQL GRANTs in Redshift as well as IAM permissions?
+
+A. (From class) Both failures in this run were `permission denied for relation …` even though IAM allowed the Data API calls. The fix was `GRANT` statements inside Redshift for the role's database user (`IAMR:<role name>`).
 
 Expanded: there are **two layers of permissions** when AWS services talk to Redshift. **IAM** decides whether the role may call the Redshift Data API at all. Then **inside Redshift**, the database user that role maps to needs normal SQL `GRANT`s: `EXECUTE` on procedures, and `SELECT`/`INSERT`/`UPDATE` on every table the procedure touches. Today's two failures were both the second layer. Same pattern as Aurora IAM auth in Training 22: IAM gets you in the door, `GRANT` decides what you can touch.
 
@@ -178,9 +255,11 @@ Expanded: there are **two layers of permissions** when AWS services talk to Reds
 | **Redrive** | Restart a failed execution from the failed step, keeping the successful steps' results |
 | **Graph view** | The console diagram: each state turns green (succeeded), red (failed) or blue (running) |
 
+**Interview line (Redrive vs re-running):** "Redrive restarts a failed Standard execution from the failed state and reuses the results of the steps that already succeeded, so expensive Glue jobs don't run twice. A fresh execution starts from the top. Before either, I check the checkpoint didn't advance."
+
 ---
 
-## Scheduling it: EventBridge Scheduler in Terraform (1:38–1:44)
+## Scheduling it: EventBridge Scheduler in Terraform
 
 - **Interval: every 30 minutes.** The AI recommended it as "a reasonable balance between data freshness and Glue startup costs". Each run starts two Glue jobs, and every Glue job run has startup time and a minimum billed duration, so running every 5 minutes would cost much more for little benefit.
 - New file **`scheduler.tf`** in the same Terraform directory as `main.tf`. Terraform reads **every `.tf` file in the folder** as one configuration, so splitting resources into files is just for organization.
@@ -188,7 +267,7 @@ Expanded: there are **two layers of permissions** when AWS services talk to Reds
   1. Create the schedule **disabled** first → `plan` (3 to add) → `apply`.
   2. Verify: `DISABLED`, `rate(30 minutes)`.
   3. Change `state` to `ENABLED` in the `.tf` → `plan` (1 to change) → `apply`.
-- **Overlap guard:** EventBridge Scheduler doesn't stop a new execution from starting while the previous one is still running. A conservative safeguard checks for running executions first. Otherwise two runs could process the same batch window.
+- **Overlap guard:** EventBridge Scheduler doesn't stop a new execution from starting while the previous one is still running. A conservative safeguard checks for running executions first. Otherwise two runs could process the same batch window. Clean ways to do it: a first state that calls `ListExecutions` with status `RUNNING` and exits if another run is active, or a lock row in the checkpoint table that a run must claim before starting.
 - Last validation: wait for the first scheduled run (30 min) and confirm it succeeds.
 - **Result: a fully automated pipeline from ingestion to Gold.** Lambda puts data into Bronze every 5 minutes, Step Functions processes it every 30 minutes, and Terraform describes all of it.
 
@@ -199,7 +278,7 @@ EventBridge Scheduler (30 min) ─▶ Step Functions:
     (MERGE → canonical, refresh Gold dims/fact, advance checkpoint)
 ```
 
-**AI workflow tip from Evan (1:44):** a very long ChatGPT chat starts making more mistakes. When a chat gets long, ask it to "summarize the work you've done so I can pass it to a new chat with full context", then continue in a fresh chat. Evan did this before the next topic.
+**AI workflow tip from Evan:** a very long ChatGPT chat starts making more mistakes. When a chat gets long, ask it to "summarize the work you've done so I can pass it to a new chat with full context", then continue in a fresh chat. Evan did this before the next topic.
 
 **Next (after break):** a real-time **Streamlit dashboard** reading from Redshift, deployed on **EC2** (simpler than Fargate with only an hour left), set up in Terraform.
 
@@ -207,7 +286,7 @@ EventBridge Scheduler (30 min) ─▶ Step Functions:
 
 # From Evan's Shared ChatGPT Chat
 
-Source: the chat Evan shared after class ("Terraform Teaching Strategy"), saved locally as `transcriptions/Training 24 – 2026-10-14 14-14-38/evan_chatgpt_share.md`. It covers Tuesday's and today's classes. These details fill in what the transcript couldn't show, including the hour I missed.
+Source: Evan's shared chat "Terraform Teaching Strategy". It covers Tuesday's and today's classes, including the first hour of today's class.
 
 ## The final architecture
 
@@ -255,7 +334,11 @@ The Step Functions workflow does **not** call the ingestion Lambda. Ingestion ke
 3. The first apply **partially succeeded**, then failed on the invalid `Sql.$` syntax in the state machine.
 4. Fix: move the SQL execution into the coordinator Lambda. Final apply: **0 added, 4 changed, 0 destroyed**, and the state machine kept its existing ARN.
 
-**Lesson:** always run Terraform from the directory that holds `terraform.tfstate`. A plan that wants to *add* things you know already exist means Terraform has lost track of its state, so **stop and don't apply**.
+Q. What does it mean when `terraform plan` wants to add resources you know already exist?
+
+A. (From class) Terraform has lost track of its state, usually because it's running in a folder without the state file.
+
+Expanded: **Lesson:** always run Terraform from the directory that holds `terraform.tfstate`. A plan that wants to *add* things you know already exist means Terraform has lost track of its state, so **stop and don't apply**.
 
 ## Baseline numbers before the first automated run
 
@@ -265,7 +348,7 @@ Canonical observations **1,579,415** = Gold fact observations **1,579,415**. No 
 
 ## Last hour: Streamlit dashboard on EC2, via Terraform (from Evan's second shared chat)
 
-Source: `transcriptions/Training 24 – 2026-10-14 14-14-38/evan_chatgpt_share_dashboard.md`. This is also the basis for the **optional extra-credit homework**.
+Source: Evan's second shared chat. This is also the basis for the **optional extra-credit homework**.
 
 **Goal:** a "real-time" Citi Bike dashboard: a map with color-coded station markers (available bikes, e-bikes, empty docks or utilization, user-selectable), plus historical charts. It runs on **EC2** ("the easiest deployment option"), and **both the permissions and the deployment are in Terraform**, added to the existing project.
 
@@ -304,3 +387,60 @@ This avoids "pretending that a 30-minute batch pipeline provides second-by-secon
 | Public IPv4 | Released, no charge |
 | App, venv, systemd service | Kept on disk; Streamlit starts automatically on boot |
 | The pipeline (Lambda every 5 min, Step Functions every 30 min) | **Still running and billing**, since stopping EC2 doesn't affect it |
+
+---
+
+# CDC and AWS DMS (roadmap topic, not demoed in class)
+
+Q. What is CDC (change data capture)?
+
+A. (Not covered in class.) Capturing every insert, update and delete from a source database as it happens, and applying those changes downstream, instead of re-copying whole tables.
+
+Expanded:
+
+| CDC method | How it finds changes | Catches deletes? | Load on the source |
+|---|---|---|---|
+| Query-based (`WHERE updated_at > checkpoint`) | Polls a timestamp column, like our batch window | No (hard deletes are invisible) | Repeated queries |
+| Trigger-based | Triggers write each change to an audit table | Yes | High (extra writes on every transaction) |
+| **Log-based** (DMS, Debezium) | Reads the database's transaction log: Postgres WAL via logical replication, MySQL binlog | Yes | Lowest. The preferred method |
+
+**Interview line:** "CDC streams row-level changes out of a database. Log-based CDC reads the transaction log, so it catches deletes and barely touches the source. Downstream I land the changes, keep the latest change per key, and MERGE them into the target."
+
+---
+
+Q. How does AWS DMS do CDC?
+
+A. (Not covered in class.) DMS (Database Migration Service) copies data from a source endpoint to a target endpoint, as a one-time full load, ongoing CDC, or both.
+
+Expanded:
+
+| DMS piece | Job |
+|---|---|
+| Replication instance (or DMS Serverless) | The compute that runs the copy |
+| Source / target endpoints | Connection details, e.g. RDS Postgres → S3 or Redshift |
+| Replication task | What to copy and how: **full load**, **CDC only**, or **full load + ongoing replication** |
+
+- **Source setup:** Postgres needs logical replication turned on (`rds.logical_replication = 1` on RDS); MySQL needs `binlog_format = ROW`.
+- **Common pattern:** DMS → S3 as Parquet. Each change row carries an `Op` column (`I`, `U`, `D`) and a commit timestamp. A Glue/Spark job keeps the **latest change per key**, then applies it to Redshift or Delta: delete the `D` keys, MERGE the rest. That is the same landing → dedupe → merge → checkpoint pattern as today's pipeline.
+
+| | AWS DMS | Debezium → Kafka |
+|---|---|---|
+| Type | Managed AWS service | Open source, runs on Kafka Connect |
+| Output | Directly to S3, Redshift, Kinesis, Kafka and more | Change events in Kafka topics |
+| Best for | Migrations and AWS-native replication | Event-driven systems; many consumers reading the same changes |
+| You operate | Almost nothing | Kafka + Connect cluster |
+
+---
+
+# Interview-ready from today
+
+| Question | Your one-line answer |
+|---|---|
+| Full vs incremental load? | Full reprocesses everything each run; incremental processes only new data since a checkpoint, so it needs idempotent loads |
+| How do you build an idempotent incremental load? | Batch window + batch ID → landing table → dedupe with ROW_NUMBER → MERGE / insert-where-not-exists in one transaction → advance the checkpoint only after validations pass |
+| How do you handle late-arriving data? | Overlap each window with the previous one (we used 2 hours) and let the dedup/MERGE make the overlap harmless; skip the newest few minutes so half-written files aren't read |
+| Where should a checkpoint live? | Somewhere durable that can be updated after the load succeeds; we used a Redshift table rather than adding DynamoDB |
+| What is CDC and how does DMS do it? | Streaming row-level changes from a database; DMS reads the transaction log and delivers full load + ongoing changes to S3/Redshift/Kinesis |
+| Redrive vs re-run? | Redrive resumes a failed execution from the failed step; a re-run starts over |
+| Why GRANTs as well as IAM for Redshift? | IAM lets the role call the Data API; Redshift GRANTs decide which tables its database user can touch |
+| Plan wants to add resources that exist? | Terraform lost its state (wrong folder). Stop, don't apply |
