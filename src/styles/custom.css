@@ -102,3 +102,27 @@
 .pd-pro rect, .pd-sw.pd-pro { stroke: var(--pd-pro); border-color: var(--pd-pro); fill: color-mix(in srgb, var(--pd-pro) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-pro) var(--pd-fill-alpha), transparent); }
 .pd-srv rect, .pd-sw.pd-srv { stroke: var(--pd-srv); border-color: var(--pd-srv); fill: color-mix(in srgb, var(--pd-srv) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-srv) var(--pd-fill-alpha), transparent); }
 .pd-orc rect, .pd-sw.pd-orc { stroke: var(--pd-orc); border-color: var(--pd-orc); stroke-dasharray: 4 3; fill: color-mix(in srgb, var(--pd-orc) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-orc) var(--pd-fill-alpha), transparent); }
+
+/* Tables: fit the page instead of scrolling sideways. Starlight keeps long
+   inline code unbroken, so one long ARN, path or command widened the whole
+   table. Inline code and links (raw URLs) in cells may now wrap anywhere; normal words only
+   hyphenate or break as a last resort, so they stay readable. Tables with more
+   columns than fit (mostly on phones) still scroll, which beats crushed words. */
+.sl-markdown-content table:not(:where(.not-content *)) {
+	font-size: var(--sl-text-sm);
+}
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+	padding: 0.45rem 0.75rem;
+	overflow-wrap: break-word;
+	hyphens: auto;
+}
+.sl-markdown-content :is(th, td) :is(code, a):not(:where(.not-content *)) {
+	overflow-wrap: anywhere;
+	hyphens: none;
+}
+/* On phones, reclaim the cell padding so 2-3 column tables fit too. */
+@media (max-width: 50rem) {
+	.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+		padding: 0.4rem 0.4rem;
+	}
+}
