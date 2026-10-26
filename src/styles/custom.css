@@ -57,3 +57,48 @@
 .hero .tagline {
 	text-shadow: 0 0 30px rgba(14, 165, 233, 0.35);
 }
+
+/* Pipeline diagrams (reference/pipeline-diagrams). One color per role, tuned
+   for the dark default and redefined for both light-theme states below. */
+:root {
+	--pd-src: #94a3b8;
+	--pd-ing: #f59e0b;
+	--pd-sto: #22c55e;
+	--pd-pro: #38bdf8;
+	--pd-srv: #c084fc;
+	--pd-orc: #f472b6;
+	--pd-fill-alpha: 16%;
+	--pd-ink: #e2e8f0;
+	--pd-muted: #94a3b8;
+}
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme='dark']) {
+		--pd-src: #64748b; --pd-ing: #b45309; --pd-sto: #15803d; --pd-pro: #0369a1; --pd-srv: #7e22ce; --pd-orc: #be185d;
+		--pd-fill-alpha: 10%; --pd-ink: #0f172a; --pd-muted: #475569;
+	}
+}
+:root[data-theme='light'] {
+	--pd-src: #64748b; --pd-ing: #b45309; --pd-sto: #15803d; --pd-pro: #0369a1; --pd-srv: #7e22ce; --pd-orc: #be185d;
+	--pd-fill-alpha: 10%; --pd-ink: #0f172a; --pd-muted: #475569;
+}
+.pd-fig { margin: 1rem 0 1.25rem; }
+.pd-scroll { overflow-x: auto; padding-bottom: 0.25rem; }
+.pd { display: block; width: 100%; height: auto; min-width: 560px; font-family: var(--sl-font); }
+.pd-fig figcaption { font-size: var(--sl-text-xs); color: var(--pd-muted); margin-top: 0.4rem; }
+.pd-node rect { stroke-width: 1.5; }
+.pd-label { font-size: 13px; font-weight: 600; fill: var(--pd-ink); }
+.pd-sub { font-size: 11px; fill: var(--pd-muted); }
+.pd-edge { fill: none; stroke: var(--pd-muted); stroke-width: 1.5; }
+.pd-ctl { stroke-dasharray: 5 4; }
+.pd-head { fill: var(--pd-muted); }
+.pd-elab { font-size: 10.5px; fill: var(--pd-muted); }
+.pd-legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: var(--sl-text-xs); color: var(--pd-muted); }
+.pd-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.pd-sw { display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1.5px solid; }
+.pd-sw.pd-dash { border: none; border-top: 2px dashed var(--pd-muted); border-radius: 0; height: 0; width: 1.2rem; }
+.pd-src rect, .pd-sw.pd-src { stroke: var(--pd-src); border-color: var(--pd-src); fill: color-mix(in srgb, var(--pd-src) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-src) var(--pd-fill-alpha), transparent); }
+.pd-ing rect, .pd-sw.pd-ing { stroke: var(--pd-ing); border-color: var(--pd-ing); fill: color-mix(in srgb, var(--pd-ing) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-ing) var(--pd-fill-alpha), transparent); }
+.pd-sto rect, .pd-sw.pd-sto { stroke: var(--pd-sto); border-color: var(--pd-sto); fill: color-mix(in srgb, var(--pd-sto) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-sto) var(--pd-fill-alpha), transparent); }
+.pd-pro rect, .pd-sw.pd-pro { stroke: var(--pd-pro); border-color: var(--pd-pro); fill: color-mix(in srgb, var(--pd-pro) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-pro) var(--pd-fill-alpha), transparent); }
+.pd-srv rect, .pd-sw.pd-srv { stroke: var(--pd-srv); border-color: var(--pd-srv); fill: color-mix(in srgb, var(--pd-srv) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-srv) var(--pd-fill-alpha), transparent); }
+.pd-orc rect, .pd-sw.pd-orc { stroke: var(--pd-orc); border-color: var(--pd-orc); stroke-dasharray: 4 3; fill: color-mix(in srgb, var(--pd-orc) var(--pd-fill-alpha), transparent); background: color-mix(in srgb, var(--pd-orc) var(--pd-fill-alpha), transparent); }
