@@ -21,6 +21,8 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Big Data Handbook',
+			// Per-page "Last updated" from git history (deploy checks out full history)
+			lastUpdated: true,
 			customCss: ['./src/styles/custom.css'],
 			social: [
 				{
@@ -30,29 +32,37 @@ export default defineConfig({
 				},
 			],
 			sidebar: [
+				{ label: "🆕 What's New", slug: 'whats-new' },
+				{ label: '🎯 Final Project', slug: 'final-project' },
 				{
 					label: '📓 Notes',
 					items: [{ autogenerate: { directory: 'notes' } }],
+					collapsed: true,
 				},
 				{
 					label: '🧭 Walkthroughs',
 					items: [{ autogenerate: { directory: 'walkthroughs' } }],
+					collapsed: true,
 				},
 				{
 					label: '📝 Study Guides',
 					items: [{ autogenerate: { directory: 'study-guide' } }],
+					collapsed: true,
 				},
 				{
 					label: '🔤 Vocabulary',
 					items: [{ autogenerate: { directory: 'vocabulary' } }],
+					collapsed: true,
 				},
 				{
 					label: '🧰 Reference',
 					items: [{ autogenerate: { directory: 'reference' } }],
+					collapsed: true,
 				},
 				{
 					label: '✅ Homework',
 					items: [{ autogenerate: { directory: 'homework' } }],
+					collapsed: true,
 				},
 			],
 		}),

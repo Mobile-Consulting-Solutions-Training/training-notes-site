@@ -1,0 +1,260 @@
+---
+import data from '../data/sql-practice.json';
+---
+
+<div class="sp not-content" data-practice={JSON.stringify(data)}>
+	<div class="sp-top">
+		<label>
+			Exercise
+			<select class="sp-pick"></select>
+		</label>
+		<span class="sp-progress" aria-live="polite"></span>
+	</div>
+
+	<div class="sp-card">
+		<div class="sp-meta"></div>
+		<p class="sp-prompt"></p>
+		<details class="sp-schema">
+			<summary>Tables</summary>
+			<table>
+				<tbody>
+					{data.schema.map(([t, cols, about]) => (
+						<tr><td><code>{t}</code></td><td>{cols}<br /><span class="sp-about">{about}</span></td></tr>
+					))}
+				</tbody>
+			</table>
+		</details>
+		<label class="sp-sr" for="sp-editor">Your SQL</label>
+		<textarea id="sp-editor" class="sp-editor" spellcheck="false" autocapitalize="off" autocomplete="off" rows="7" placeholder="Write a SELECT query, then press Run (Ctrl/Cmd + Enter)"></textarea>
+		<div class="sp-actions">
+			<button type="button" class="sp-btn sp-run">Run and check <kbd>Ctrl ↵</kbd></button>
+			<button type="button" class="sp-btn sp-hint">Hint</button>
+			<button type="button" class="sp-btn sp-show">Show solution</button>
+			<button type="button" class="sp-btn sp-next">Next →</button>
+		</div>
+		<div class="sp-feedback" aria-live="polite"></div>
+		<pre class="sp-solution" hidden></pre>
+		<div class="sp-result"></div>
+	</div>
+	<p class="sp-foot">Runs SQLite in your browser; nothing is sent anywhere. Each run starts from a fresh copy of the tables. Progress is saved in this browser only. <button type="button" class="sp-link sp-reset">Reset progress</button></p>
+</div>
+
+<script>
+	type Ex = { id: string; n: number; level: number; topic: string; prompt: string; solution: string; ordered: boolean; hint: string };
+	type Data = { setup: string; exercises: Ex[] };
+	const KEY = 'bdh-sql-practice-v1';
+	const SQLJS = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/';
+
+	function load(): { solved: Record<string, boolean>; drafts: Record<string, string> } {
+		try {
+			return { solved: {}, drafts: {}, ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+		} catch {
+			return { solved: {}, drafts: {} };
+		}
+	}
+	function save(s: object) {
+		try {
+			localStorage.setItem(KEY, JSON.stringify(s));
+		} catch {}
+	}
+	const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	const md = (s: string) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+	const norm = (v: unknown) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v === null ? null : String(v).trim());
+
+	function loadSqlJs(): Promise<any> {
+		const w = window as any;
+		if (w.__sqljs) return w.__sqljs;
+		w.__sqljs = new Promise((resolve, reject) => {
+			const s = document.createElement('script');
+			s.src = SQLJS + 'sql-wasm.js';
+			s.onload = () => w.initSqlJs({ locateFile: (f: string) => SQLJS + f }).then(resolve, reject);
+			s.onerror = () => reject(new Error('Could not load the SQL engine. Check your connection and reload.'));
+			document.head.appendChild(s);
+		});
+		return w.__sqljs;
+	}
+
+	for (const root of document.querySelectorAll<HTMLElement>('.sp')) {
+		const data: Data = JSON.parse(root.dataset.practice || '{}');
+		const $ = <T extends Element>(s: string) => root.querySelector(s) as T;
+		const pick = $<HTMLSelectElement>('.sp-pick');
+		const editor = $<HTMLTextAreaElement>('.sp-editor');
+		const fb = $<HTMLElement>('.sp-feedback');
+		const out = $<HTMLElement>('.sp-result');
+		const sol = $<HTMLElement>('.sp-solution');
+		let state = load();
+		let cur = 0;
+
+		function options() {
+			const sel = pick.value;
+			pick.innerHTML = data.exercises
+				.map((e, i) => `<option value="${i}">${state.solved[e.id] ? '✓ ' : ''}${e.n}. ${esc(e.topic)} (${'●'.repeat(e.level)}${'○'.repeat(3 - e.level)})</option>`)
+				.join('');
+			pick.value = sel || String(cur);
+			const done = data.exercises.filter((e) => state.solved[e.id]).length;
+			$<HTMLElement>('.sp-progress').textContent = `${done} of ${data.exercises.length} solved`;
+		}
+		function show(i: number) {
+			cur = i;
+			const e = data.exercises[i];
+			pick.value = String(i);
+			$<HTMLElement>('.sp-meta').innerHTML = `<span class="sp-badge">Level ${e.level}</span> ${esc(e.topic)}${state.solved[e.id] ? ' · <span class="sp-ok">solved</span>' : ''}`;
+			$<HTMLElement>('.sp-prompt').innerHTML = md(e.prompt);
+			editor.value = state.drafts[e.id] ?? '';
+			fb.className = 'sp-feedback';
+			fb.textContent = '';
+			out.innerHTML = '';
+			sol.hidden = true;
+			sol.textContent = e.solution;
+		}
+		function table(res: { columns: string[]; values: unknown[][] }) {
+			const rows = res.values.slice(0, 200);
+			const more = res.values.length > 200 ? `<p class="sp-about">Showing 200 of ${res.values.length} rows.</p>` : '';
+			return `<div class="sp-scroll"><table><thead><tr>${res.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows
+				.map((r) => `<tr>${r.map((v) => `<td>${v === null ? '<em>NULL</em>' : esc(String(v))}</td>`).join('')}</tr>`)
+				.join('')}</tbody></table></div><p class="sp-about">${res.values.length} row${res.values.length === 1 ? '' : 's'}</p>${more}`;
+		}
+		async function run() {
+			const e = data.exercises[cur];
+			const sql = editor.value.trim();
+			state.drafts[e.id] = editor.value;
+			save(state);
+			if (!sql) return;
+			fb.className = 'sp-feedback';
+			fb.textContent = 'Running…';
+			let SQL;
+			try {
+				SQL = await loadSqlJs();
+			} catch (err) {
+				fb.className = 'sp-feedback sp-bad';
+				fb.textContent = (err as Error).message;
+				return;
+			}
+			const fresh = () => {
+				const db = new SQL.Database();
+				db.exec(data.setup);
+				return db;
+			};
+			let mine, want;
+			const db = fresh();
+			try {
+				const r = db.exec(sql);
+				mine = r[r.length - 1] || { columns: [], values: [] };
+			} catch (err) {
+				fb.className = 'sp-feedback sp-bad';
+				fb.textContent = 'SQL error: ' + (err as Error).message;
+				out.innerHTML = '';
+				return;
+			} finally {
+				db.close();
+			}
+			const db2 = fresh();
+			want = db2.exec(e.solution)[0];
+			db2.close();
+			out.innerHTML = table(mine);
+			const a = mine.values.map((r: unknown[]) => JSON.stringify(r.map(norm)));
+			const b = want.values.map((r: unknown[]) => JSON.stringify(r.map(norm)));
+			let msg = '';
+			if (mine.columns.length !== want.columns.length) msg = `Expected ${want.columns.length} column${want.columns.length === 1 ? '' : 's'} (${want.columns.join(', ')}), you returned ${mine.columns.length}.`;
+			else if (a.length !== b.length) msg = `Expected ${b.length} row${b.length === 1 ? '' : 's'}, you returned ${a.length}.`;
+			else if (JSON.stringify([...a].sort()) !== JSON.stringify([...b].sort())) msg = 'Same number of rows, but some values differ. Compare with the question and check rounding, filters and joins.';
+			else if (e.ordered && JSON.stringify(a) !== JSON.stringify(b)) msg = 'The right rows, but in the wrong order. Check your ORDER BY.';
+			if (msg) {
+				fb.className = 'sp-feedback sp-bad';
+				fb.textContent = 'Not quite. ' + msg;
+			} else {
+				fb.className = 'sp-feedback sp-good';
+				fb.textContent = 'Correct!';
+				state.solved[e.id] = true;
+				save(state);
+				options();
+				show(cur);
+				out.innerHTML = table(mine);
+				fb.className = 'sp-feedback sp-good';
+				fb.textContent = 'Correct!' + (cur < data.exercises.length - 1 ? ' Press Next for the next one.' : ' That was the last one.');
+			}
+		}
+
+		pick.addEventListener('change', () => show(Number(pick.value)));
+		$('.sp-run').addEventListener('click', run);
+		$('.sp-next').addEventListener('click', () => show((cur + 1) % data.exercises.length));
+		$('.sp-hint').addEventListener('click', () => {
+			fb.className = 'sp-feedback';
+			fb.innerHTML = '<strong>Hint:</strong> ' + md(data.exercises[cur].hint);
+		});
+		$('.sp-show').addEventListener('click', () => (sol.hidden = !sol.hidden));
+		$('.sp-reset').addEventListener('click', () => {
+			state = { solved: {}, drafts: {} };
+			save(state);
+			options();
+			show(cur);
+		});
+		editor.addEventListener('keydown', (ev) => {
+			if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+				ev.preventDefault();
+				run();
+			}
+		});
+		const first = data.exercises.findIndex((e) => !state.solved[e.id]);
+		options();
+		show(first === -1 ? 0 : first);
+	}
+</script>
+
+<style>
+	.sp { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+	.sp-top { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: space-between; font-size: var(--sl-text-sm); }
+	.sp-top label { display: flex; gap: 0.5rem; align-items: center; color: var(--sl-color-gray-2); }
+	.sp-pick {
+		background: var(--sl-color-bg-nav); color: var(--sl-color-text); border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.375rem; padding: 0.35rem 0.5rem; font: inherit; max-width: 100%;
+	}
+	.sp-progress { color: var(--sl-color-gray-2); font-size: var(--sl-text-xs); }
+	.sp-card {
+		display: flex; flex-direction: column; gap: 0.75rem; padding: 1.25rem; border-radius: 0.75rem;
+		background: var(--sl-color-bg-nav); border: 1px solid var(--sl-color-gray-5);
+	}
+	.sp-meta { font-size: var(--sl-text-xs); color: var(--sl-color-gray-2); }
+	.sp-badge {
+		display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; margin-right: 0.35rem;
+		background: var(--sl-color-accent-low); color: #fff; font-weight: 600;
+	}
+	.sp-ok { color: var(--sl-color-green-high); font-weight: 600; }
+	.sp-prompt { margin: 0; font-size: var(--sl-text-lg); line-height: 1.45; color: var(--sl-color-white); }
+	.sp-schema { font-size: var(--sl-text-sm); }
+	.sp-schema summary { cursor: pointer; color: var(--sl-color-text-accent); }
+	.sp-schema table { margin-top: 0.5rem; border-collapse: collapse; width: 100%; }
+	.sp-schema td { padding: 0.35rem 0.5rem 0.35rem 0; border-bottom: 1px solid var(--sl-color-gray-5); vertical-align: top; overflow-wrap: anywhere; }
+	.sp-about { color: var(--sl-color-gray-2); font-size: var(--sl-text-xs); margin: 0.25rem 0 0; }
+	.sp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+	.sp-editor {
+		width: 100%; box-sizing: border-box; font-family: var(--sl-font-mono); font-size: var(--sl-text-sm); line-height: 1.5;
+		padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--sl-color-gray-5);
+		background: var(--sl-color-bg); color: var(--sl-color-text); resize: vertical;
+	}
+	.sp-editor:focus { outline: 2px solid var(--sl-color-accent); outline-offset: 1px; }
+	.sp-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+	.sp-btn {
+		font: inherit; font-size: var(--sl-text-sm); padding: 0.5rem 0.85rem; border-radius: 0.5rem; cursor: pointer;
+		border: 1px solid var(--sl-color-gray-5); background: transparent; color: var(--sl-color-text);
+	}
+	.sp-btn:hover { border-color: var(--sl-color-accent); }
+	.sp-run { background: var(--sl-color-accent); color: var(--sl-color-black); border-color: var(--sl-color-accent); font-weight: 600; }
+	.sp-btn kbd { font-size: 0.75em; opacity: 0.75; margin-left: 0.25rem; }
+	.sp-feedback { font-size: var(--sl-text-sm); min-height: 1.3em; }
+	.sp-good { color: var(--sl-color-green-high); font-weight: 600; }
+	.sp-bad { color: var(--sl-color-red-high); }
+	.sp-solution {
+		margin: 0; padding: 0.75rem; border-radius: 0.5rem; background: var(--sl-color-bg); border: 1px dashed var(--sl-color-gray-4);
+		font-family: var(--sl-font-mono); font-size: var(--sl-text-xs); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--sl-color-text);
+	}
+	.sp-solution[hidden] { display: none; }
+	.sp-scroll { overflow-x: auto; }
+	.sp-result table { border-collapse: collapse; font-size: var(--sl-text-xs); min-width: 50%; }
+	.sp-result th, .sp-result td { text-align: left; padding: 0.3rem 0.75rem 0.3rem 0; border-bottom: 1px solid var(--sl-color-gray-5); }
+	.sp-result th { color: var(--sl-color-white); }
+	.sp-result em { color: var(--sl-color-gray-3); }
+	.sp-foot { font-size: var(--sl-text-xs); color: var(--sl-color-gray-2); margin: 0; }
+	.sp-link { font: inherit; background: none; border: none; padding: 0; color: var(--sl-color-text-accent); text-decoration: underline; cursor: pointer; }
+	@media (max-width: 40rem) { .sp-btn kbd { display: none; } .sp-prompt { font-size: var(--sl-text-base); } }
+</style>

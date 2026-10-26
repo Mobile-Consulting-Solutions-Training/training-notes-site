@@ -1,0 +1,15 @@
+---
+title: SQL Practice
+description: 16 graded SQL exercises that run in your browser, from WHERE and GROUP BY to window functions, on the class employee data and a Citi Bike star schema.
+sidebar:
+  order: 1
+tableOfContents: false
+---
+
+import SqlPractice from '../../../components/SqlPractice.astro';
+
+Practice for the SQL round of an interview. Write a query, run it, and it's checked against the expected answer. The exercises go from basic filters (level ●○○) to window functions and the integer-division trap (level ●●●), on the class employee data, a small orders table, and a Citi Bike star schema like the one built in Redshift.
+
+The engine is SQLite. It supports everything the exercises need (CTEs, `ROW_NUMBER`, `RANK`, `LAG`), but there's no `QUALIFY`: filter window results in an outer query instead, the same as in Postgres. Column names don't have to match the answer; the values do.
+
+<SqlPractice />
