@@ -7,8 +7,6 @@ sidebar:
 
 Study Guide - Day 2 (source: notes/Training 2.md)
 
-Note: this guide covers Python Background through DataFrames/Pandas. The File I/O, JSON/CSV, Filtering, Joins and Small ETL Exercise sections are in the Training 2 notes but not yet in this guide.
-
 # Part 1: Quick Summary
 
 **Python Background.** Python is interpreted (no separate compile step, run directly with `python script.py`), unlike compiled languages (C, C++, Rust, Go) that build to machine code first, or hybrid Java (compiles to bytecode, then JVM interprets/JIT-compiles it). Python is dynamically typed - types are checked at runtime, not declared upfront - though optional type hints plus external tools (`mypy`, `pyright`) can add static checking on top without changing how Python actually runs. Packages should come from PyPI (pypi.org), the official trusted registry `pip install` pulls from by default - always verify an unfamiliar package's name/maintainer to avoid typosquatting. Python's `threading` module is limited by the GIL (Global Interpreter Lock) - only one thread executes Python bytecode at a time, so threading only helps I/O-bound work, not CPU-bound work (`multiprocessing` is needed for real CPU parallelism). This is why Spark doesn't rely on Python threads for its heavy lifting: the actual distributed computation happens at the JVM/cluster/process level, not within a single Python process.
@@ -20,6 +18,16 @@ Note: this guide covers Python Background through DataFrames/Pandas. The File I/
 **Exceptions & Logging.** `try`/`except`/`else`/`finally` - `finally` always runs regardless of success, a caught exception, or an uncaught one. Catching an exception does NOT stop the rest of the script - execution continues normally after a handled exception; only an uncaught (or re-raised) exception actually halts things. Exception order matters: specific exceptions should be caught before generic `Exception`, since only the first match fires. The `logging` module (`logging.basicConfig`, `logging.info/debug/warning/error`) is preferred over `print()` in production code since severity levels can be filtered without editing the code, and `%s`-style placeholders avoid building the log string unless that level is actually enabled.
 
 **DataFrames (Pandas).** Pandas replaces record-at-a-time Python loops with vectorized, column-oriented operations - `df["salary"] * 1.05` operates on an entire column at once instead of looping row by row. Core building blocks: `pd.read_csv()` (extract), boolean indexing `df[condition]` (filter, works with a fixed value OR another column, since both sides just need to be same-length/aligned Series), `.groupby(...).agg()/.mean()/.count()/.min()/.max()` (aggregate, collapses to one row per group), `.groupby(...).transform(...)` (broadcasts an aggregate back onto every original row without collapsing - needed to compare a row's own value against its group's aggregate), `.groupby(...).rank(...)` (ranks within each group, same non-collapsing behavior as transform), `.merge()` (join two DataFrames on a shared column), and `.sort_values(columns, ascending=[...])` (reorder rows, optionally by multiple keys with independent directions). A Series (one column, no column names) is different from a DataFrame (a full table) - `.to_frame()` converts one to the other, which matters because you can only assign new named columns onto a DataFrame, not a Series.
+
+**File I/O.** Open files with `open()` inside a `with` block (a context manager), which closes the file automatically even if an error happens; without it, a crash before `f.close()` can leave the file locked or lose unflushed data. Modes: `"r"` read (default), `"w"` write (overwrites the file), `"a"` append, `"rb"`/`"wb"` binary (images, Parquet). Looping `for line in f:` reads one line at a time, so it works on files bigger than memory. `pathlib.Path` builds paths safely on any OS (`Path("data") / "sales.csv"`) and exposes `.exists()`, `.suffix` and `.stem`.
+
+**JSON / CSV.** The standard library's `json` module reads and writes JSON: `json.load(f)` / `json.dump(obj, f)` work with files, while `json.loads(s)` / `json.dumps(obj)` work with strings (the "s" means string). The `csv` module's `DictReader` turns each row into a dict keyed by the header (every value is a string), and `DictWriter` writes dicts back out. Pandas loads straight into DataFrames: `pd.read_csv` (types inferred, `chunksize=` for big files), `pd.read_json(path, lines=True)` for newline-delimited JSON, and `pd.json_normalize` to flatten nested JSON into columns like `address.city`. For a CSV bigger than RAM: read it in chunks, load only the needed columns (`usecols`) with smaller dtypes, or switch to Polars/DuckDB on one machine or Spark on a cluster.
+
+**Filtering.** Filter with a boolean mask inside `df[...]`. Combine conditions with `&` (and), `|` (or) and `~` (not), wrapping each condition in parentheses; plain `and`/`or` fail with "The truth value of a Series is ambiguous", because Python's `and` expects one True/False, not a whole column. Shortcuts: `.isin([...])`, `.between(low, high)`, and `df.query("...")`. Missing data and duplicates: `isna()`/`notna()`, `dropna(subset=[...])`, `fillna(0)`, `drop_duplicates(subset=[...])`. Call `.copy()` after filtering, because a filtered DataFrame may be a view of the original and changing it raises `SettingWithCopyWarning`.
+
+**Joins.** `merge` joins on column values (like SQL JOIN, with `how="left"/"inner"/"outer"/"right"`), `join` joins on the index (handy for attaching a `groupby` result), and `concat` stacks DataFrames: `pd.concat([df1, df2])` adds rows (like SQL `UNION ALL`), `axis=1` puts columns side by side.
+
+**Small ETL Exercise.** The worked example is the employee pipeline in Pandas: **extract** `pd.read_csv("data.csv")` → **transform** types with `.astype()` → **filter** active employees earning $70,000+ → **transform** a 5% raise → **aggregate** total payroll, payroll by department and average salary → **load** with `to_csv("processed_employees.csv", index=False)`. It's the Pandas version of the earlier `map` → `filter` → `map` → `reduce` pipeline, and the point is the same as all of Pandas: whole-column (vectorized) operations replace looping over rows.
 
 **Agent Generated Notes (Pandas homework additions, not from live class).** `pd.cut()` bins a numeric column into labeled categories in one vectorized call (e.g. salary -> "Low"/"Medium"/"High"/"Very High") - edges are exclusive-low/inclusive-high by default. `.unstack()` reshapes a two-column `groupby()` result from "long" format (stacked MultiIndex rows) into "wide" format (a spreadsheet-style grid), typically paired with `fill_value=0` so missing combinations show a true zero instead of `NaN`. `observed=True` on a `groupby()` over a categorical column (like one produced by `pd.cut()`) avoids generating "phantom" groups for category combinations that don't actually appear in the data.
 
@@ -60,6 +68,34 @@ Note: this guide covers Python Background through DataFrames/Pandas. The File I/
 - `df1.merge(df2, on="col", how="left")` -> join two DataFrames.
 - `df.sort_values(["col1", "col2"], ascending=[True, False])` -> multi-key sort, independent directions per column.
 - Series (one column, no column names) vs DataFrame (full table) - `.to_frame()` converts Series -> DataFrame; only a DataFrame can have new named columns assigned onto it.
+
+## File I/O
+- `with open("data.txt", "r") as f:` -> closes the file automatically, even on errors. Without `with`: locked files / lost unflushed data.
+- Modes: `"r"` read (default) · `"w"` overwrite · `"a"` append · `"rb"`/`"wb"` binary.
+- `for line in f:` -> one line at a time, safe for huge files. `f.write("text\n")` to write.
+- `pathlib.Path("data") / "sales.csv"` -> OS-safe paths; `.exists()`, `.suffix`, `.stem`.
+
+## JSON / CSV
+- `json.load(f)` / `json.dump(obj, f)` -> files. `json.loads(s)` / `json.dumps(obj)` -> strings ("s" = string).
+- `csv.DictReader(f)` -> each row a dict keyed by header (values are strings). `csv.DictWriter(f, fieldnames=[...])` -> write dicts.
+- `pd.read_csv(path)` (types inferred) · `pd.read_csv(path, chunksize=100_000)` (big files) · `pd.read_json(path, lines=True)` (NDJSON).
+- `pd.json_normalize(records)` -> flattens nested JSON into columns like `address.city`.
+- CSV bigger than RAM: `chunksize`, `usecols` + smaller dtypes, or Polars / DuckDB / Spark.
+
+## Filtering
+- `df[(cond1) & (cond2)]` · `|` or · `~` not. Parentheses around each condition. `and`/`or` -> "truth value of a Series is ambiguous".
+- `.isin(["Sales", "Finance"])` · `.between(60_000, 90_000)` · `df.query("salary >= 70000 and active")`.
+- Missing / duplicate data: `isna()` / `notna()` · `dropna(subset=[...])` · `fillna(0)` · `drop_duplicates(subset=[...])`.
+- `.copy()` after filtering -> independent DataFrame, avoids `SettingWithCopyWarning`.
+
+## Joins
+- `df.merge(other, on="key", how="left")` -> on column values (SQL JOIN).
+- `df.join(other)` -> on the index (e.g. a groupby result indexed by department).
+- `pd.concat([df1, df2])` -> stack rows (UNION ALL). `pd.concat([df1, df2], axis=1)` -> side by side.
+
+## Small ETL Exercise (employee pipeline)
+- Extract `read_csv` -> transform types `.astype()` -> filter active + $70k+ -> transform 5% raise -> aggregate (total, by department, average) -> load `to_csv("processed_employees.csv", index=False)`.
+- Same steps as the `map` -> `filter` -> `map` -> `reduce` version, but vectorized: whole columns at once instead of row loops.
 
 ## Agent Generated Notes (not from live class)
 - `pd.cut(series, bins=[...], labels=[...])` -> bins a numeric column into labeled categories in one vectorized call. Edges: low-exclusive, high-inclusive by default.
@@ -126,6 +162,42 @@ A: A Series is one column of values with an index, no column names. A DataFrame 
 
 Q: How do you sort a DataFrame by department first, then by salary descending within each department?
 A: `df.sort_values(["department", "salary"], ascending=[True, False])` - the two lists line up positionally (primary key + direction, then tie-breaker + direction).
+
+Q: Why should you open files with a `with` block?
+A: It's a context manager that closes the file automatically, even if an error happens. Without it, a crash before `f.close()` can leave the file locked or lose data that wasn't flushed yet.
+
+Q: What's the difference between the `"w"` and `"a"` file modes?
+A: `"w"` overwrites the file from scratch; `"a"` appends to the end and keeps what was already there. `"r"` is read, the default.
+
+Q: How do you read a file that's bigger than memory, line by line?
+A: Loop over the file object, `for line in f:`, which reads one line at a time instead of loading the whole file.
+
+Q: What's the difference between `json.load` and `json.loads`?
+A: `json.load` reads JSON from a file object; `json.loads` parses JSON from a string. The "s" stands for string. The same pattern holds for `json.dump` and `json.dumps`.
+
+Q: What does `csv.DictReader` give you, and what's the catch?
+A: Each row as a dict keyed by the header names. The catch is that every value is a string, so numbers and dates need converting.
+
+Q: How do you turn nested JSON into a flat DataFrame?
+A: `pd.json_normalize(records)`, which turns nested keys into columns like `address.city`.
+
+Q: How would you process a CSV that's bigger than your RAM?
+A: Read it with `chunksize` and aggregate each chunk, or load only the needed columns with `usecols` and smaller dtypes. If it's still too big, use a tool built for it: Polars or DuckDB on one machine, or Spark on a cluster.
+
+Q: Why does `df[df["a"] > 1 and df["b"] < 5]` fail?
+A: Python's `and` expects a single True/False, not a whole column, so it raises "The truth value of a Series is ambiguous". Use `&` and wrap each condition in parentheses: `df[(df["a"] > 1) & (df["b"] < 5)]`.
+
+Q: What do `&`, `|` and `~` mean in a Pandas filter?
+A: And, or, and not, applied row by row to boolean masks.
+
+Q: Why call `.copy()` after filtering a DataFrame?
+A: A filtered result can be a view of the original, so changing it raises `SettingWithCopyWarning`. `.copy()` makes it an independent DataFrame.
+
+Q: What's the difference between `merge`, `join` and `concat`?
+A: `merge` joins on column values like a SQL JOIN, `join` joins on the index, and `concat` stacks DataFrames, rows on top like UNION ALL, or side by side with `axis=1`.
+
+Q: What are the steps of the employee ETL exercise?
+A: Extract the CSV with `read_csv`, convert types, filter active employees earning $70,000 or more, give them a 5% raise, aggregate total payroll, payroll by department and average salary, then save with `to_csv`.
 
 Q: What does `pd.cut()` do, and what's the edge-boundary gotcha?
 A: Bins a numeric column into labeled categories in one vectorized call. Bin edges are low-exclusive/high-inclusive by default, so matching a rule like "under 70,000 is Low" requires setting the edge at `69_999`, not `70_000`.
