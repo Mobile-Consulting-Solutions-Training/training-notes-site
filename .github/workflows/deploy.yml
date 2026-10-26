@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history, so each page's "Last updated" date is its own
       - name: Install, build, and upload site
         uses: withastro/action@v3
         with:
