@@ -130,7 +130,7 @@ WHEN NOT MATCHED THEN INSERT (station_id, snapshot_ts, bikes_available, docks_av
 
 | Redshift `MERGE` rule | What it means here |
 |---|---|
-| A target row may match **only one** source row | Duplicate keys in landing make `MERGE` fail, so deduplicate first (the doubled `COPY` in my homework, 15,112 rows vs 7,556 unique, would have broken it) |
+| A target row may match **only one** source row | Duplicate keys in landing make `MERGE` fail, so deduplicate first (a doubled `COPY` in one homework run, 15,112 rows vs 7,556 unique, would have broken it) |
 | `MERGE … REMOVE DUPLICATES` is a simplified form | Updates matches and inserts the rest, using the source's columns, with no `WHEN` clauses to write |
 | Grammar is stricter than Snowflake or Delta (e.g. no extra conditions on `WHEN MATCHED`) | Patterns copied from other warehouses often fail with "unexpected input". Check the Redshift docs |
 
