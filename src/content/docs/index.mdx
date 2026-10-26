@@ -23,7 +23,7 @@ hero:
       icon: open-book
       variant: minimal
     - text: Videos
-      link: /training-notes-site/videos/
+      link: /training-notes-site/reference/videos/
       icon: youtube
       variant: minimal
     - text: Homework
@@ -60,7 +60,12 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 	<LinkCard
 		title="Videos"
 		description="Every video shared in class in one table - search by day, topic, or channel to find what to watch."
-		href="/training-notes-site/videos/"
+		href="/training-notes-site/reference/videos/"
+	/>
+	<LinkCard
+		title="Errors & Fixes"
+		description="Every error hit in class and homework, with the cause and the fix, grouped by tool. Search for the exact error text you're seeing."
+		href="/training-notes-site/reference/errors-and-fixes/"
 	/>
 	<LinkCard
 		title="Course Roadmap"
