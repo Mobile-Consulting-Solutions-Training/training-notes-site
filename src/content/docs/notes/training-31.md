@@ -257,7 +257,7 @@ A. (Evan, demo) Portal → **Azure Synapse Analytics → Create**:
 |---|---|---|
 | Resource group | Same resource group as everything else | Keep class resources together for cleanup |
 | Managed resource group | Accidentally typed the workspace name here at first, then fixed it | Azure fills this in itself. Leave it blank |
-| Workspace name | `synapse-citibike-teacher` (an AI suggestion) | Students: follow the `alexjackson` naming |
+| Workspace name | `synapse-citibike-teacher` (an AI suggestion) | Students: use your own name as the prefix |
 | Region | Default was Australia East. Tried **East US 2** (failed, per the error message), then **Brazil South** (succeeded) | See the failure below |
 | Data Lake Storage Gen2 | **Use the existing storage account** (the class ADLS) | This is the workspace's **primary storage** |
 | File system (container) | Created a **new** one called `synapse` | Synapse's own workspace files go here, not into bronze or silver |

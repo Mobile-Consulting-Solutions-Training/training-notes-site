@@ -5,7 +5,7 @@ sidebar:
   order: 210
 ---
 
-Source material: [Training 21 notes](/training-notes-site/notes/training-21/) and today's live transcripts (`transcriptions/Training 21 – 2026-10-09 13-07-21/` and `... 14-15-44 (part 2)/`). **Gap:** about 13:47–14:15 wasn't recorded (OBS lost audio, then crashed), so the exact networking fix isn't captured. Use Evan's posted class video to fill it. Deep dive for the modeling part: [Deep Dive - Star Schema (Facts and Dimensions)](/training-notes-site/walkthroughs/star-schema-deep-dive/). Homework: `homework/assignment/Homework - Training 21 (Assignment).md`.
+Source material: [Training 21 notes](/training-notes-site/notes/training-21/) . Deep dive for the modeling part: [Deep Dive - Star Schema (Facts and Dimensions)](/training-notes-site/walkthroughs/star-schema-deep-dive/). 
 
 **How to use this:** read it top to bottom once. It's the last stage of the pipeline: getting Silver into Redshift, shaping it into Gold, and finally asking it questions. Then do the self-check.
 
@@ -107,7 +107,7 @@ Connecting to Evan's workgroup gave `permission denied for relation citibike_sta
 | IAM | Using the editor, connecting to the workgroup | ✅ Passed |
 | Database (`GRANT`) | Which database user may read which table | ❌ The table belongs to Evan's admin user |
 
-That's why you created **your own** workgroup (`aj-citibike-wg`, namespace `aj-citibike-ns`, admin user set up front). Tables you create there are yours.
+That's why you created **your own** workgroup (`<initials>-citibike-wg`, namespace `<initials>-citibike-ns`, admin user set up front). Tables you create there are yours.
 
 ---
 

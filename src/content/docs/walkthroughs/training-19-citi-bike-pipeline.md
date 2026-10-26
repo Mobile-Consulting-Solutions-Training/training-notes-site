@@ -5,7 +5,7 @@ sidebar:
   order: 190
 ---
 
-Source material: [Training 19 notes](/training-notes-site/notes/training-19/), the class recording transcript (Oct 7), and the screen captures in `code_extracts/Training 19 – 2026-10-07 13-04-06/`. Service-by-service reference (commands, JSON, console clicks): [Reference - Training 19 (AWS Services Used in Class)](/training-notes-site/walkthroughs/training-19-aws-services-reference/). Homework: `homework/submission/Homework - Training 19 (Answers).md`.
+Source material: [Training 19 notes](/training-notes-site/notes/training-19/) and the class demo. Service-by-service reference (commands, JSON, console clicks): [Reference - Training 19 (AWS Services Used in Class)](/training-notes-site/walkthroughs/training-19-aws-services-reference/).
 
 **How to use this:** this is the *story* of what Evan built and *why each piece exists*. Read it once top to bottom. When you need exact commands, jump to the Reference doc. Then do the self-check at the end without looking back.
 
@@ -41,7 +41,7 @@ Each step below is a problem, and the AWS service is the answer.
 
 ## Step 1: "Where do we keep the snapshots?" → S3 with a Bronze layout
 
-Evan's bucket: `citi-bike-nyc-pipeline` (yours: `alexjackson-citicike-pipeline`). Every file the ingester saves goes to a key like:
+Evan's bucket: `citi-bike-nyc-pipeline` (yours: `<your-name>-citibike-pipeline`). Every file the ingester saves goes to a key like:
 
 ```
 bronze/citibike/station_status/year=2026/month=10/day=07/hour=18/station_status_20261007T182800Z.json

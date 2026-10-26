@@ -5,7 +5,7 @@ sidebar:
   order: 200
 ---
 
-Source material: [Training 20 notes](/training-notes-site/notes/training-20/) and the class recording transcript (`transcriptions/Training 20 – 2026-10-08 13-23-23/`). Evan's reference chat: "AWS Glue Class Outline". Homework: `homework/submission/Homework - Training 20 (Answers).md`. Previous class: [Walkthrough - Training 19 (Citi Bike Pipeline Build)](/training-notes-site/walkthroughs/training-19-citi-bike-pipeline/).
+Source material: [Training 20 notes](/training-notes-site/notes/training-20/). Evan's reference chat: "AWS Glue Class Outline". Previous class: [Walkthrough - Training 19 (Citi Bike Pipeline Build)](/training-notes-site/walkthroughs/training-19-citi-bike-pipeline/).
 
 **How to use this:** read it top to bottom once. It follows the day in the order Evan did it, with each step framed as the problem it solves. Then do the self-check without looking back.
 

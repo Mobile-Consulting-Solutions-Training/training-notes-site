@@ -653,7 +653,7 @@ A. Docker Hub is a **registry service for Docker images** - conceptually like Gi
 
 | Term | Meaning |
 |---|---|
-| Repository | A named collection of an image's versions, in the form `username/repo-name` (e.g. `alexjackson/my-etl-app`) |
+| Repository | A named collection of an image's versions, in the form `username/repo-name` (e.g. `<your-dockerhub-user>/my-etl-app`) |
 | Tag | A label on a specific version of an image, e.g. `my-etl-app:1.2.0` or `my-etl-app:latest` - `latest` is just a naming convention, not a guaranteed special value |
 | Public vs private | Public repos are pullable by anyone; Docker Hub's free tier includes unlimited public repos but only one private repo |
 
@@ -661,20 +661,20 @@ A. Docker Hub is a **registry service for Docker images** - conceptually like Gi
 ```bash
 docker login                                          # authenticate with your Docker Hub account
 
-docker build -t alexjackson/my-etl-app:1.0.0 .        # build the image, tagged as username/repo:tag
+docker build -t <your-dockerhub-user>/my-etl-app:1.0.0 .        # build the image, tagged as username/repo:tag
 
-docker push alexjackson/my-etl-app:1.0.0              # upload that tagged image to Docker Hub
+docker push <your-dockerhub-user>/my-etl-app:1.0.0              # upload that tagged image to Docker Hub
 ```
 If an image is already built under a different name, re-tag it rather than rebuilding:
 ```bash
-docker tag my-etl-app:local alexjackson/my-etl-app:1.0.0
-docker push alexjackson/my-etl-app:1.0.0
+docker tag my-etl-app:local <your-dockerhub-user>/my-etl-app:1.0.0
+docker push <your-dockerhub-user>/my-etl-app:1.0.0
 ```
 
 **Pulling and running it anywhere else:**
 ```bash
-docker pull alexjackson/my-etl-app:1.0.0
-docker run alexjackson/my-etl-app:1.0.0
+docker pull <your-dockerhub-user>/my-etl-app:1.0.0
+docker run <your-dockerhub-user>/my-etl-app:1.0.0
 ```
 Any machine with Docker installed can run the exact same environment with no manual dependency/OS setup - the entire point of shipping a container instead of raw source code.
 

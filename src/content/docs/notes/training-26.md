@@ -86,7 +86,7 @@ Expanded: A **service-linked role** is a special role that **AWS owns** on behal
 | Permission to create | `iam:CreateRole` | `iam:CreateServiceLinkedRole` |
 | Usable by EventBridge **Scheduler** to call Lambda? | Yes, if it trusts `scheduler.amazonaws.com` and allows `lambda:InvokeFunction` | No (wrong service, wrong permissions) |
 
-**Still needed for my scheduler:** a normal role trusting `scheduler.amazonaws.com` with `lambda:InvokeFunction` on `alexjackson-citibike-ingestion` (and `states:StartExecution` for the Training 24 Step Functions schedule). Either Evan creates it, or I get `iam:CreateRole` back.
+**Still needed for the scheduler:** a normal role trusting `scheduler.amazonaws.com` with `lambda:InvokeFunction` on `<your-name>-citibike-ingestion` (and `states:StartExecution` for the Training 24 Step Functions schedule). Either Evan creates it, or I get `iam:CreateRole` back.
 
 ---
 

@@ -277,7 +277,7 @@ Expanded:
 |---|---|---|
 | `variable` | An input, set by `terraform.tfvars`, `-var` or `TF_VAR_` env vars | `variable "instance_type" { default = "t3.small" }` |
 | `output` | A value printed after apply, readable with `terraform output` | `dashboard_url` in Training 24 |
-| `locals` | A computed value reused inside the config | `locals { prefix = "alexjackson-citibike" }` |
+| `locals` | A computed value reused inside the config | `locals { prefix = "<your-name>-citibike" }` |
 
 ---
 
