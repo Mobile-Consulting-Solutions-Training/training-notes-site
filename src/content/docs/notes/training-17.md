@@ -11,7 +11,7 @@ Syllabus Day 18 (per file numbering) - topic: dbt with Snowflake - DAGs, buildin
 
 # dbt with Snowflake (Additional Notes, from class)
 
-Roughly the first hour of class was lost to a Snowflake permissions error in the UI and an MFA authentication problem connecting dbt to Snowflake. Homework: `homework/submission/alexjackson_training-17-homework/`. Runnable local copy of the class project: `class-demos/dbt-orders/`.
+Roughly the first hour of class was lost to a Snowflake permissions error in the UI and an MFA authentication problem connecting dbt to Snowflake. Homework: `homework/submission/<your-name>_training-17-homework/`. Runnable local copy of the class project: `class-demos/dbt-orders/`.
 
 ---
 

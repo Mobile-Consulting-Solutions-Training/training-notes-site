@@ -5,7 +5,7 @@ sidebar:
   order: 191
 ---
 
-Source: the class recording (Oct 7, 4h09m), what was on Evan's screen, and [Training 19 notes](/training-notes-site/notes/training-19/). This is a **look-it-up** reference: one section per service, in the order they showed up in class. For the story of what Evan built, step by step, see [Walkthrough - Training 19 (Citi Bike Pipeline Build)](/training-notes-site/walkthroughs/training-19-citi-bike-pipeline/).
+Source: the class demo and [Training 19 notes](/training-notes-site/notes/training-19/). This is a **look-it-up** reference: one section per service, in the order they showed up in class. For the story of what Evan built, step by step, see [Walkthrough - Training 19 (Citi Bike Pipeline Build)](/training-notes-site/walkthroughs/training-19-citi-bike-pipeline/).
 
 Each section has:
 - **What it is**, in one or two sentences

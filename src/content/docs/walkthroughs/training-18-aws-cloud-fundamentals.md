@@ -5,7 +5,7 @@ sidebar:
   order: 180
 ---
 
-Source material: [Training 18 notes](/training-notes-site/notes/training-18/) and the class recording transcript (Oct 6). Homework: `homework/submission/Homework - Training 18 (Answers).md`.
+Source material: [Training 18 notes](/training-notes-site/notes/training-18/).
 
 **How to use this:** read it top to bottom once. Each AWS service shows up as the *answer to a problem* in one running story, instead of as a list of definitions. Then do the self-check at the end without looking back. If an answer doesn't come, reread just that step.
 

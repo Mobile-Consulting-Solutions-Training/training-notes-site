@@ -7,7 +7,9 @@ sidebar:
 
 Exactly what Evan did on Wed Oct 14, in order, with his real commands and code, translated to **your** resources.
 
-**Sources:** Evan's shared ChatGPT chat for that class (`transcriptions/Training 24 – 2026-10-14 14-14-38/evan_chatgpt_share.md`, messages 88–227), his own class recording (`Training 24 – Recording 2026-10-14 18-07-10`, which covers the first hour you missed), and your OBS recording.
+**Sources:** [Training 24 notes](/training-notes-site/notes/training-24/) and Evan's shared chat for that class.
+
+**Names:** replace `<your-name>` and `<initials>` with your own (for example `jdoe-citibike-ingest`, `jd-citibike-wg`). The class shares one AWS account, so resource names must be unique to you.
 
 **What you end with:**
 
@@ -31,22 +33,22 @@ You run every command yourself. Phases 1–8 need only things you already have (
 
 | Thing | Evan | You |
 |---|---|---|
-| Bucket | `citi-bike-nyc-pipeline` | `alexjackson-citicike-pipeline` (typo is real) |
-| Ingestion Lambda | `citibike-ingestion` | `alexjackson-citibike-ingest` |
-| Glue role | `AWSGlueServiceRole-CitiBike` | `alexjackson-citibike-glue-role` |
-| Existing Glue job | `CitiBikeBronzeToSilverBackfillV2` | `alexjackson-citibike-bronze-to-silver` |
-| New incremental Glue job | `CitiBikeBronzeToSilverIncrementalV2` | `alexjackson-citibike-bronze-to-silver-incremental` |
+| Bucket | `citi-bike-nyc-pipeline` | `<your-name>-citibike-pipeline` |
+| Ingestion Lambda | `citibike-ingestion` | `<your-name>-citibike-ingest` |
+| Glue role | `AWSGlueServiceRole-CitiBike` | `<your-name>-citibike-glue-role` |
+| Existing Glue job | `CitiBikeBronzeToSilverBackfillV2` | `<your-name>-citibike-bronze-to-silver` |
+| New incremental Glue job | `CitiBikeBronzeToSilverIncrementalV2` | `<your-name>-citibike-bronze-to-silver-incremental` |
 | Silver → Redshift | Glue job 2 over a JDBC connection | **Redshift `COPY`** (what you already use), see Phase 4 |
-| Redshift role for COPY | n/a | `alexjackson-citibike-redshift-role` |
-| Workgroup / namespace | `citibike-wg` | `aj-citibike-wg` / `aj-citibike-ns` |
+| Redshift role for COPY | n/a | `<your-name>-citibike-redshift-role` |
+| Workgroup / namespace | `citibike-wg` | `<initials>-citibike-wg` / `<initials>-citibike-ns` |
 | Canonical (staging) table | `public.citibike_station_snapshot_v2` | `public.citibike_station_snapshot` |
 | Landing table | `public.citibike_station_snapshot_landing_v2` | `public.citibike_station_snapshot_landing` |
 | Timestamp column | `snapshot_timestamp` | `snapshot_ts` (from your Silver job), confirm in Phase 0 |
 | Checkpoint table | `public.citibike_pipeline_checkpoint` | same name |
 | Procedures | `sp_process_citibike_batch`, `sp_complete_citibike_batch` | same names |
-| Coordinator Lambda | `citibike-batch-coordinator` | `alexjackson-citibike-batch-coordinator` |
-| State machine | `citibike-class-orchestration` | `alexjackson-citibike-orchestration` |
-| 30-min schedule | `citibike-incremental-every-30-min` | `alexjackson-citibike-incremental-every-30-min` |
+| Coordinator Lambda | `citibike-batch-coordinator` | `<your-name>-citibike-batch-coordinator` |
+| State machine | `citibike-class-orchestration` | `<your-name>-citibike-orchestration` |
+| 30-min schedule | `citibike-incremental-every-30-min` | `<your-name>-citibike-incremental-every-30-min` |
 | CLI profile | `company` | your profile (below: `<profile>`) |
 | Account ID | (his) | `<account-id>`: type it yourself, never paste it into files |
 
@@ -54,7 +56,7 @@ You run every command yourself. Phases 1–8 need only things you already have (
 
 ## Phase 0: Check your starting point (5 min)
 
-Evan's first move every time was to look before changing anything. In **Query editor v2** → `aj-citibike-wg` → `dev`:
+Evan's first move every time was to look before changing anything. In **Query editor v2** → `<initials>-citibike-wg` → `dev`:
 
 ```sql
 -- 1. Exact columns and order of your canonical table (the landing table will copy this)
@@ -88,26 +90,26 @@ If query 1 shows a different order or names, change the Glue `select(...)` in Ph
 And confirm Bronze is still filling (ingestion keeps running separately):
 
 ```bash
-aws s3 ls s3://alexjackson-citicike-pipeline/bronze/citibike/station_status/ --recursive --profile <profile> | tail -5
+aws s3 ls s3://<your-name>-citibike-pipeline/bronze/citibike/station_status/ --recursive --profile <profile> | tail -5
 ```
 
 ---
 
-## Phase 1: The first hour you missed, historical backfill and Gold full refresh
+## Phase 1: The first hour, historical backfill and Gold full refresh
 
-**What Evan did (recording 0:16–1:04):** his Silver v2 backfill job had failed the day before. He found "Glue job runner session is not authorized to perform S3 PutObject", fixed the Glue role's policy, checked for partial output (`aws s3 ls … --summarize`, 0 objects), deleted the half-written folder, and reran. Then he created and ran the Silver → Redshift backfill job. Redshift then held **1,551,706** observations (Oct 7–14).
+**What Evan did (first hour of class):** his Silver v2 backfill job had failed the day before. He found "Glue job runner session is not authorized to perform S3 PutObject", fixed the Glue role's policy, checked for partial output (`aws s3 ls … --summarize`, 0 objects), deleted the half-written folder, and reran. Then he created and ran the Silver → Redshift backfill job. Redshift then held **1,551,706** observations (Oct 7–14).
 
 Then, before any incremental work, he **backed up Gold** and did **one full refresh** of Gold from staging. "This is a full refresh, not an incremental merge. That's appropriate for establishing the initial clean gold data set, but we don't want to delete 1.5 million rows on every scheduled execution."
 
 **Your version:** your Gold only holds the one snapshot from Oct 12 (2,519 rows), but Bronze has kept collecting since then.
 
-1. Rebuild Silver from all of Bronze: run your existing job `alexjackson-citibike-bronze-to-silver` once (it overwrites, which is fine for a backfill).
+1. Rebuild Silver from all of Bronze: run your existing job `<your-name>-citibike-bronze-to-silver` once (it overwrites, which is fine for a backfill).
 2. Reload canonical from Silver:
    ```sql
    TRUNCATE public.citibike_station_snapshot;
    COPY public.citibike_station_snapshot
-   FROM 's3://alexjackson-citicike-pipeline/silver/citibike/station_snapshot/'
-   IAM_ROLE 'arn:aws:iam::<account-id>:role/alexjackson-citibike-redshift-role'
+   FROM 's3://<your-name>-citibike-pipeline/silver/citibike/station_snapshot/'
+   IAM_ROLE 'arn:aws:iam::<account-id>:role/<your-name>-citibike-redshift-role'
    FORMAT AS PARQUET;
    ```
 3. Back up Gold (Evan's exact pattern):
@@ -156,7 +158,7 @@ ADD COLUMN batch_id VARCHAR(64);
 
 **One change for you:** Evan's job 2 loaded Redshift through a Glue JDBC connection. You use `COPY` instead, and `COPY … FORMAT AS PARQUET` matches columns **by position**. So this job writes the batch **unpartitioned**, in **exactly the landing table's column order**, with `batch_id` last.
 
-Save as `alexjackson_citibike_bronze_to_silver_incremental.py`:
+Save as `<your_name>_citibike_bronze_to_silver_incremental.py`:
 
 ```python
 """
@@ -164,7 +166,7 @@ Incremental Bronze -> one immutable Silver batch (Evan's Training 24 design,
 adapted for Redshift COPY).
 
 Job parameters: --BUCKET --BATCH_ID --START_AFTER_UTC --END_BEFORE_UTC (UTC, YYYY-MM-DDTHH:MM:SSZ)
-    --BUCKET   alexjackson-citicike-pipeline   (same as the full-refresh job)
+    --BUCKET   <your-name>-citibike-pipeline   (same as the full-refresh job)
 Window is [START_AFTER_UTC, END_BEFORE_UTC). Refuses to overwrite an existing batch.
 """
 import re
@@ -323,29 +325,29 @@ print("INCREMENTAL SILVER BATCH COMPLETE")
 
 1. Upload:
    ```bash
-   aws s3 cp alexjackson_citibike_bronze_to_silver_incremental.py \
-     s3://alexjackson-citicike-pipeline/scripts/ --profile <profile> --region us-east-2
+   aws s3 cp <your_name>_citibike_bronze_to_silver_incremental.py \
+     s3://<your-name>-citibike-pipeline/scripts/ --profile <profile> --region us-east-2
    ```
-2. Glue console → your job `alexjackson-citibike-bronze-to-silver` → **Actions → Clone job**. Name it `alexjackson-citibike-bronze-to-silver-incremental`.
+2. Glue console → your job `<your-name>-citibike-bronze-to-silver` → **Actions → Clone job**. Name it `<your-name>-citibike-bronze-to-silver-incremental`.
 3. In the clone, change these settings:
    - Script path: the file you just uploaded.
    - Job bookmark: **Disable**.
    - Retries: **0**.
    - Max concurrency: **1**.
-   - Keep `--BUCKET alexjackson-citicike-pipeline` (same convention as the full-refresh job).
+   - Keep `--BUCKET <your-name>-citibike-pipeline` (same convention as the full-refresh job).
 
 **Check the Glue role can write the new prefix first.** This was Evan's first failure ("TASK_WRITE_FAILED … SQLSTATE: 58030"), because his policy covered a different Silver prefix:
 
 ```bash
 aws iam simulate-principal-policy \
-  --policy-source-arn arn:aws:iam::<account-id>:role/alexjackson-citibike-glue-role \
+  --policy-source-arn arn:aws:iam::<account-id>:role/<your-name>-citibike-glue-role \
   --action-names s3:PutObject s3:DeleteObject \
-  --resource-arns arn:aws:s3:::alexjackson-citicike-pipeline/silver/citibike/incremental_batches/batch_id=test/x.parquet \
+  --resource-arns arn:aws:s3:::<your-name>-citibike-pipeline/silver/citibike/incremental_batches/batch_id=test/x.parquet \
   --profile <profile> \
   --query 'EvaluationResults[].{Action:EvalActionName,Decision:EvalDecision}'
 ```
 
-You want `allowed` for both. If you get `implicitDeny`, edit your inline policy `alexjackson-citibike-glue-s3-access` so its write statement covers `silver/*`.
+You want `allowed` for both. If you get `implicitDeny`, edit your inline policy `<your-name>-citibike-glue-s3-access` so its write statement covers `silver/*`.
 
 **Run the first catch-up batch.** Same as Evan's `catchup_20261014_a`. Pick a start a bit **before** your latest canonical `snapshot_ts` (overlap is safe; the procedure dedups) and an end after the newest Bronze file:
 
@@ -355,8 +357,8 @@ START_AFTER_UTC=2026-10-20T10:00:00Z     # replace: ~1 h before MAX(snapshot_ts)
 END_BEFORE_UTC=2026-10-20T16:00:00Z      # replace: after your newest Bronze file
 
 aws glue start-job-run \
-  --job-name alexjackson-citibike-bronze-to-silver-incremental \
-  --arguments "{\"--BUCKET\":\"alexjackson-citicike-pipeline\",\"--BATCH_ID\":\"$BATCH_ID\",\"--START_AFTER_UTC\":\"$START_AFTER_UTC\",\"--END_BEFORE_UTC\":\"$END_BEFORE_UTC\"}" \
+  --job-name <your-name>-citibike-bronze-to-silver-incremental \
+  --arguments "{\"--BUCKET\":\"<your-name>-citibike-pipeline\",\"--BATCH_ID\":\"$BATCH_ID\",\"--START_AFTER_UTC\":\"$START_AFTER_UTC\",\"--END_BEFORE_UTC\":\"$END_BEFORE_UTC\"}" \
   --profile <profile> --region us-east-2
 ```
 
@@ -367,7 +369,7 @@ Two things Evan hit here:
 If a run fails partway, check the folder and delete **only that batch's prefix**, or just use a new batch ID:
 
 ```bash
-aws s3 ls s3://alexjackson-citicike-pipeline/silver/citibike/incremental_batches/batch_id=$BATCH_ID/ --recursive --summarize --profile <profile>
+aws s3 ls s3://<your-name>-citibike-pipeline/silver/citibike/incremental_batches/batch_id=$BATCH_ID/ --recursive --summarize --profile <profile>
 ```
 
 ---
@@ -380,8 +382,8 @@ aws s3 ls s3://alexjackson-citicike-pipeline/silver/citibike/incremental_batches
 
 ```sql
 COPY public.citibike_station_snapshot_landing
-FROM 's3://alexjackson-citicike-pipeline/silver/citibike/incremental_batches/batch_id=catchup_20261020_a/'
-IAM_ROLE 'arn:aws:iam::<account-id>:role/alexjackson-citibike-redshift-role'
+FROM 's3://<your-name>-citibike-pipeline/silver/citibike/incremental_batches/batch_id=catchup_20261020_a/'
+IAM_ROLE 'arn:aws:iam::<account-id>:role/<your-name>-citibike-redshift-role'
 FORMAT AS PARQUET;
 ```
 
@@ -718,7 +720,7 @@ The regex checks matter: they're what make it safe to put `batch_id` straight in
 
 **Lambda settings:**
 - Python 3.12, handler `coordinator.handler`, timeout 240 s.
-- Environment variables: `REDSHIFT_WORKGROUP=aj-citibike-wg`, `REDSHIFT_DATABASE=dev`.
+- Environment variables: `REDSHIFT_WORKGROUP=<initials>-citibike-wg`, `REDSHIFT_DATABASE=dev`.
 
 **Its role needs:**
 - `redshift-data:ExecuteStatement`, `DescribeStatement` and `GetStatementResult`
@@ -792,7 +794,7 @@ definition = jsonencode({
       Type     = "Task"
       Resource = "arn:aws:states:::glue:startJobRun.sync"     # .sync = wait until the job finishes
       Parameters = {
-        JobName = "alexjackson-citibike-bronze-to-silver-incremental"
+        JobName = "<your-name>-citibike-bronze-to-silver-incremental"
         Arguments = {
           "--BATCH_ID.$"        = "$.prepared.batch.batch_id"
           "--START_AFTER_UTC.$" = "$.prepared.batch.start_after_utc"
@@ -842,8 +844,8 @@ Start one run by hand, with the schedule still off:
 
 ```bash
 aws stepfunctions start-execution \
-  --state-machine-arn arn:aws:states:us-east-2:<account-id>:stateMachine:alexjackson-citibike-orchestration \
-  --name "alexjackson-test-$(date -u +%Y%m%dT%H%M%SZ)" \
+  --state-machine-arn arn:aws:states:us-east-2:<account-id>:stateMachine:<your-name>-citibike-orchestration \
+  --name "<your-name>-test-$(date -u +%Y%m%dT%H%M%SZ)" \
   --input '{}' \
   --profile <profile> --region us-east-2
 ```
@@ -867,19 +869,19 @@ He found the database user name in query history / `pg_user`: it's **`IAMR:<role
 **Run 2** got through both Glue jobs, then failed in CompleteBatch on the landing table. The full set of grants that fixed it (your names):
 
 ```sql
-GRANT USAGE ON SCHEMA public TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT USAGE ON SCHEMA gold   TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT SELECT, INSERT ON TABLE public.citibike_station_snapshot_landing TO "IAMR:alexjackson-citibike-coordinator-role";  -- INSERT for your COPY
-GRANT SELECT, INSERT ON TABLE public.citibike_station_snapshot        TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT SELECT, INSERT, UPDATE ON TABLE gold.dim_station                TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT SELECT, INSERT ON TABLE gold.dim_date                           TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT SELECT, INSERT ON TABLE gold.fact_station_snapshot              TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT SELECT, UPDATE ON TABLE public.citibike_pipeline_checkpoint     TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT EXECUTE ON PROCEDURE public.sp_process_citibike_batch(VARCHAR)             TO "IAMR:alexjackson-citibike-coordinator-role";
-GRANT EXECUTE ON PROCEDURE public.sp_complete_citibike_batch(VARCHAR, TIMESTAMP) TO "IAMR:alexjackson-citibike-coordinator-role";
+GRANT USAGE ON SCHEMA public TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT USAGE ON SCHEMA gold   TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT SELECT, INSERT ON TABLE public.citibike_station_snapshot_landing TO "IAMR:<your-name>-citibike-coordinator-role";  -- INSERT for your COPY
+GRANT SELECT, INSERT ON TABLE public.citibike_station_snapshot        TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT SELECT, INSERT, UPDATE ON TABLE gold.dim_station                TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT SELECT, INSERT ON TABLE gold.dim_date                           TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT SELECT, INSERT ON TABLE gold.fact_station_snapshot              TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT SELECT, UPDATE ON TABLE public.citibike_pipeline_checkpoint     TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT EXECUTE ON PROCEDURE public.sp_process_citibike_batch(VARCHAR)             TO "IAMR:<your-name>-citibike-coordinator-role";
+GRANT EXECUTE ON PROCEDURE public.sp_complete_citibike_batch(VARCHAR, TIMESTAMP) TO "IAMR:<your-name>-citibike-coordinator-role";
 ```
 
-Your `COPY` from the Lambda also uses `alexjackson-citibike-redshift-role`, which is already associated with your namespace.
+Your `COPY` from the Lambda also uses `<your-name>-citibike-redshift-role`, which is already associated with your namespace.
 
 **Then: Redrive from failure.** In the Step Functions console, open the failed run → **Redrive**. It restarts at the failed step and keeps the Glue work that already succeeded, so nothing is reprocessed. All five states went green. Before redriving, check the checkpoint hasn't moved.
 
@@ -891,7 +893,7 @@ Evan's `scheduler.tf`. Note it's created **DISABLED** first.
 
 ```hcl
 resource "aws_iam_role" "scheduler" {
-  name = "alexjackson-citibike-sfn-scheduler-role"
+  name = "<your-name>-citibike-sfn-scheduler-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Principal = { Service = "scheduler.amazonaws.com" }, Action = "sts:AssumeRole" }]
@@ -899,7 +901,7 @@ resource "aws_iam_role" "scheduler" {
 }
 
 resource "aws_iam_role_policy" "scheduler" {
-  name = "alexjackson-citibike-sfn-scheduler-permissions"
+  name = "<your-name>-citibike-sfn-scheduler-permissions"
   role = aws_iam_role.scheduler.id
   policy = jsonencode({
     Version   = "2012-10-17"
@@ -908,7 +910,7 @@ resource "aws_iam_role_policy" "scheduler" {
 }
 
 resource "aws_scheduler_schedule" "citibike_incremental" {
-  name                         = "alexjackson-citibike-incremental-every-30-min"
+  name                         = "<your-name>-citibike-incremental-every-30-min"
   schedule_expression          = "rate(30 minutes)"
   schedule_expression_timezone = "UTC"
   state                        = "DISABLED"     # flip to ENABLED only after a clean manual run
@@ -931,11 +933,11 @@ It's exactly the role you asked Evan for: trusts `scheduler.amazonaws.com`, allo
 Verify after enabling:
 
 ```bash
-aws scheduler get-schedule --name alexjackson-citibike-incremental-every-30-min \
+aws scheduler get-schedule --name <your-name>-citibike-incremental-every-30-min \
   --query '{Name:Name,State:State,Schedule:ScheduleExpression}' --profile <profile> --region us-east-2
 
 aws stepfunctions list-executions \
-  --state-machine-arn arn:aws:states:us-east-2:<account-id>:stateMachine:alexjackson-citibike-orchestration \
+  --state-machine-arn arn:aws:states:us-east-2:<account-id>:stateMachine:<your-name>-citibike-orchestration \
   --max-results 10 --query 'executions[*].{Name:name,Status:status,Started:startDate}' --output table \
   --profile <profile> --region us-east-2
 ```

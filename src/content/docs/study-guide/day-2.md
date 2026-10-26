@@ -7,7 +7,7 @@ sidebar:
 
 Study Guide - Day 2 (source: notes/Training 2.md)
 
-Note: File I/O, JSON/CSV, Filtering, Joins, and the Small ETL Exercise sections are still empty in Training 2.md pending the class recording - this guide covers everything documented so far (Python Background through DataFrames/Pandas, plus the Agent Generated Notes added while working through the Pandas homework). Update this guide once those sections are filled in.
+Note: this guide covers Python Background through DataFrames/Pandas. The File I/O, JSON/CSV, Filtering, Joins and Small ETL Exercise sections are in the Training 2 notes but not yet in this guide.
 
 # Part 1: Quick Summary
 

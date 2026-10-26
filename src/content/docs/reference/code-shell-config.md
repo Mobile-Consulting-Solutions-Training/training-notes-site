@@ -213,9 +213,9 @@ pipeline {
 ```bash
 docker login                                          # authenticate with your Docker Hub account
 
-docker build -t alexjackson/my-etl-app:1.0.0 .        # build the image, tagged as username/repo:tag
+docker build -t <your-dockerhub-user>/my-etl-app:1.0.0 .        # build the image, tagged as username/repo:tag
 
-docker push alexjackson/my-etl-app:1.0.0              # upload that tagged image to Docker Hub
+docker push <your-dockerhub-user>/my-etl-app:1.0.0              # upload that tagged image to Docker Hub
 ```
 
 ## Training 4: SQL Fundamentals & Data Warehousing
