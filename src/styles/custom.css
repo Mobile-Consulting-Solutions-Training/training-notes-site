@@ -19,11 +19,14 @@
    glyph) and as one end of the heading gradient (against the page background).
    In light contexts it must stay dark enough for WCAG contrast:
    #0369a1 gives ~5.9:1 against white (AA requires 3:1 for icons/UI, 4.5:1 for
-   normal text), and #04395e (used as accent-high here) gives ~12:1. */
+   normal text), and #04395e (used as accent-high here) gives ~12:1.
+   accent is also #0369a1 in light mode: it's the link color and the
+   background of white text (current sidebar item, primary buttons), and the
+   lighter #0284c7 only reached 4.1:1. */
 @media (prefers-color-scheme: light) {
 	:root:not([data-theme='dark']) {
 		--sl-color-accent-low: #0369a1;
-		--sl-color-accent: #0284c7;
+		--sl-color-accent: #0369a1;
 		--sl-color-accent-high: #04395e;
 		/* --sl-color-white is used by Starlight itself for h3-h6, table headers,
 		   link-hover, and <details> summary text - it's a "high-contrast text"
@@ -37,7 +40,7 @@
 
 :root[data-theme='light'] {
 	--sl-color-accent-low: #0369a1;
-	--sl-color-accent: #0284c7;
+	--sl-color-accent: #0369a1;
 	--sl-color-accent-high: #04395e;
 	--sl-color-white: hsl(224, 10%, 10%);
 }
