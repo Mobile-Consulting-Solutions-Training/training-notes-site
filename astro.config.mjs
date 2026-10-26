@@ -45,6 +45,7 @@ export default defineConfig({
 					label: '🔤 Vocabulary',
 					items: [{ autogenerate: { directory: 'vocabulary' } }],
 				},
+				{ label: '🎬 Videos', slug: 'videos' },
 				{
 					label: '✅ Homework',
 					items: [{ autogenerate: { directory: 'homework' } }],

@@ -1,6 +1,6 @@
 ---
 title: Big Data Handbook
-description: Data Engineering bootcamp notes, walkthroughs, study guides, vocabulary and homework, organized by training day.
+description: Data Engineering bootcamp notes, walkthroughs, study guides, vocabulary, videos and homework, organized by training day.
 template: splash
 hero:
   tagline: Data Engineering bootcamp notes, step-by-step walkthroughs, cheat sheets, and flashcards - readable on any device.
@@ -21,6 +21,10 @@ hero:
     - text: Vocabulary
       link: /training-notes-site/vocabulary/day-0/
       icon: open-book
+      variant: minimal
+    - text: Videos
+      link: /training-notes-site/videos/
+      icon: youtube
       variant: minimal
     - text: Homework
       link: /training-notes-site/homework/training-1/
@@ -52,6 +56,11 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 		title="Vocabulary"
 		description="Per-day glossaries - every term from that day's training, with just its definition, for fast review."
 		href="/training-notes-site/vocabulary/day-0/"
+	/>
+	<LinkCard
+		title="Videos"
+		description="Every video shared in class in one table - search by day, topic, or channel to find what to watch."
+		href="/training-notes-site/videos/"
 	/>
 	<LinkCard
 		title="Course Roadmap"
