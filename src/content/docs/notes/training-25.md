@@ -9,7 +9,7 @@ Teacher: Evan Flint
 
 Syllabus Day 26 (per file numbering; Thu Oct 15). Topics: AI on top of the pipeline. Local AI (Ollama), RAG pipelines and vector databases, then **Amazon Bedrock** added to the Citi Bike Streamlit dashboard as a **text-to-SQL chatbot** that queries Redshift and explains the results.
 
-Note: I was out on PTO for this class. Notes compiled after class from the class materials and Evan's shared chat. Homework: `homework/assignment/Homework - Training 25 (Assignment).md`.
+Note: notes compiled after class from the class materials and Evan's shared chat. Homework: `homework/assignment/Homework - Training 25 (Assignment).md`.
 
 ---
 

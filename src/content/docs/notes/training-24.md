@@ -75,7 +75,7 @@ Design lesson: **don't add a service just because the AI suggested it.** Ask "wh
 
 Q. What does the stored procedure's load SQL actually look like?
 
-A. (From my homework rebuild of the class procedure; table names there are the non-`_v2` versions.) Deduplicate the batch on the business key with `QUALIFY ROW_NUMBER()`, then insert only keys that aren't in the target yet. Evan used `INSERT … WHERE NOT EXISTS` instead of `MERGE` because Redshift kept rejecting the `MERGE` syntax. For insert-only data, both give the same result.
+A. (From a homework rebuild of the class procedure; table names there are the non-`_v2` versions.) Deduplicate the batch on the business key with `QUALIFY ROW_NUMBER()`, then insert only keys that aren't in the target yet. Evan used `INSERT … WHERE NOT EXISTS` instead of `MERGE` because Redshift kept rejecting the `MERGE` syntax. For insert-only data, both give the same result.
 
 ```sql
 CREATE OR REPLACE PROCEDURE public.sp_process_citibike_batch(p_batch_id IN VARCHAR)

@@ -1,0 +1,210 @@
+---
+import cards from '../data/flashcards.json';
+const days = [...new Set(cards.map((c) => c.day))].sort((a, b) => a - b);
+---
+
+<div class="fc not-content" data-cards={JSON.stringify(cards)}>
+	<div class="fc-controls">
+		<label>
+			Day
+			<select class="fc-day">
+				<option value="all">All days</option>
+				{days.map((d) => <option value={d}>Day {d}</option>)}
+			</select>
+		</label>
+		<label>
+			Show
+			<select class="fc-mode">
+				<option value="all">All cards</option>
+				<option value="todo">Not marked "got it"</option>
+				<option value="again">Marked "review again"</option>
+			</select>
+		</label>
+		<label class="fc-check"><input type="checkbox" class="fc-shuffle" checked /> Shuffle</label>
+	</div>
+
+	<div class="fc-stats" aria-live="polite"></div>
+
+	<button type="button" class="fc-card" aria-label="Flashcard. Click or press Space to show the answer.">
+		<span class="fc-label">Question</span>
+		<span class="fc-q"></span>
+		<span class="fc-a" hidden></span>
+		<span class="fc-hint">Click or press Space to show the answer</span>
+	</button>
+
+	<div class="fc-actions">
+		<button type="button" class="fc-btn fc-prev" aria-label="Previous card">← Back</button>
+		<button type="button" class="fc-btn fc-again">Review again <kbd>1</kbd></button>
+		<button type="button" class="fc-btn fc-got">Got it <kbd>2</kbd></button>
+		<button type="button" class="fc-btn fc-next" aria-label="Next card">Skip →</button>
+	</div>
+
+	<p class="fc-foot">
+		Your progress is saved in this browser only. <button type="button" class="fc-link fc-reset">Reset progress</button>
+	</p>
+</div>
+
+<script>
+	type Card = { id: string; day: number; q: string; a: string };
+	const KEY = 'bdh-flashcards-v1';
+
+	function load(): Record<string, 'got' | 'again'> {
+		try {
+			return JSON.parse(localStorage.getItem(KEY) || '{}');
+		} catch {
+			return {};
+		}
+	}
+	function save(p: Record<string, string>) {
+		try {
+			localStorage.setItem(KEY, JSON.stringify(p));
+		} catch {}
+	}
+	// Escape first, then allow `code` and **bold** from the study guides
+	function md(s: string) {
+		const esc = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		return esc.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+	}
+
+	for (const root of document.querySelectorAll<HTMLElement>('.fc')) {
+		const all: Card[] = JSON.parse(root.dataset.cards || '[]');
+		const $ = <T extends Element>(s: string) => root.querySelector(s) as T;
+		const day = $<HTMLSelectElement>('.fc-day');
+		const mode = $<HTMLSelectElement>('.fc-mode');
+		const shuffle = $<HTMLInputElement>('.fc-shuffle');
+		const card = $<HTMLButtonElement>('.fc-card');
+		const q = $<HTMLElement>('.fc-q');
+		const a = $<HTMLElement>('.fc-a');
+		const label = $<HTMLElement>('.fc-label');
+		const hint = $<HTMLElement>('.fc-hint');
+		const stats = $<HTMLElement>('.fc-stats');
+		let progress = load();
+		let deck: Card[] = [];
+		let i = 0;
+		let shown = false;
+
+		const params = new URLSearchParams(location.search);
+		if (params.get('day') && [...day.options].some((o) => o.value === params.get('day'))) day.value = params.get('day')!;
+
+		function build() {
+			deck = all.filter((c) => day.value === 'all' || String(c.day) === day.value);
+			if (mode.value === 'todo') deck = deck.filter((c) => progress[c.id] !== 'got');
+			if (mode.value === 'again') deck = deck.filter((c) => progress[c.id] === 'again');
+			if (shuffle.checked) {
+				for (let k = deck.length - 1; k > 0; k--) {
+					const j = Math.floor(Math.random() * (k + 1));
+					[deck[k], deck[j]] = [deck[j], deck[k]];
+				}
+			}
+			i = 0;
+			render();
+		}
+
+		function render() {
+			const inDay = all.filter((c) => day.value === 'all' || String(c.day) === day.value);
+			const got = inDay.filter((c) => progress[c.id] === 'got').length;
+			const again = inDay.filter((c) => progress[c.id] === 'again').length;
+			shown = false;
+			a.hidden = true;
+			if (!deck.length) {
+				label.textContent = 'Done';
+				q.textContent = mode.value === 'again' ? 'Nothing marked "review again" here.' : 'No cards left in this set. Nice work!';
+				hint.textContent = 'Change the filters above to keep going';
+				stats.textContent = `${got} of ${inDay.length} marked "got it" · ${again} to review again`;
+				return;
+			}
+			const c = deck[i];
+			label.textContent = `Day ${c.day} · Question`;
+			q.innerHTML = md(c.q);
+			a.innerHTML = md(c.a);
+			hint.textContent = 'Click or press Space to show the answer';
+			const mark = progress[c.id] === 'got' ? ' · you marked this "got it"' : progress[c.id] === 'again' ? ' · marked "review again"' : '';
+			stats.textContent = `Card ${i + 1} of ${deck.length}${mark} · ${got} of ${inDay.length} marked "got it" · ${again} to review again`;
+		}
+
+		function flip() {
+			if (!deck.length) return;
+			shown = !shown;
+			a.hidden = !shown;
+			label.textContent = `Day ${deck[i].day} · ${shown ? 'Answer' : 'Question'}`;
+			hint.textContent = shown ? 'How did you do? Press 1 (review again) or 2 (got it)' : 'Click or press Space to show the answer';
+		}
+		function move(step: number) {
+			if (!deck.length) return;
+			i = (i + step + deck.length) % deck.length;
+			render();
+		}
+		function mark(v: 'got' | 'again') {
+			if (!deck.length) return;
+			progress[deck[i].id] = v;
+			save(progress);
+			// Drop the card from filtered sets it no longer belongs to
+			if ((mode.value === 'todo' && v === 'got') || (mode.value === 'again' && v === 'got')) {
+				deck.splice(i, 1);
+				if (i >= deck.length) i = 0;
+				render();
+			} else move(1);
+		}
+
+		card.addEventListener('click', flip);
+		$('.fc-next').addEventListener('click', () => move(1));
+		$('.fc-prev').addEventListener('click', () => move(-1));
+		$('.fc-got').addEventListener('click', () => mark('got'));
+		$('.fc-again').addEventListener('click', () => mark('again'));
+		$('.fc-reset').addEventListener('click', () => {
+			progress = {};
+			save(progress);
+			build();
+		});
+		[day, mode, shuffle].forEach((el) => el.addEventListener('change', build));
+		document.addEventListener('keydown', (e) => {
+			const t = e.target as HTMLElement;
+			if (t.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+			if (e.key === ' ' && t !== card) { e.preventDefault(); flip(); }
+			else if (e.key === 'ArrowRight') move(1);
+			else if (e.key === 'ArrowLeft') move(-1);
+			else if (e.key === '1') mark('again');
+			else if (e.key === '2') mark('got');
+		});
+		build();
+	}
+</script>
+
+<style>
+	.fc { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+	.fc-controls { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: center; font-size: var(--sl-text-sm); }
+	.fc-controls label { display: flex; gap: 0.5rem; align-items: center; color: var(--sl-color-gray-2); }
+	.fc-controls select {
+		background: var(--sl-color-bg-nav); color: var(--sl-color-text); border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.375rem; padding: 0.35rem 0.5rem; font: inherit;
+	}
+	.fc-stats { font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); min-height: 1.2em; }
+	.fc-card {
+		display: flex; flex-direction: column; gap: 0.9rem; text-align: left; width: 100%; min-height: 15rem;
+		padding: 1.5rem; border-radius: 0.75rem; cursor: pointer; font: inherit; color: var(--sl-color-text);
+		background: var(--sl-color-bg-nav); border: 1px solid var(--sl-color-gray-5);
+		transition: border-color 0.15s;
+	}
+	.fc-card:hover, .fc-card:focus-visible { border-color: var(--sl-color-accent); outline: none; }
+	.fc-label { font-size: var(--sl-text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--sl-color-accent-high); font-weight: 600; }
+	.fc-q { font-size: var(--sl-text-xl); font-weight: 600; line-height: 1.35; color: var(--sl-color-white); }
+	.fc-a { font-size: var(--sl-text-base); line-height: 1.6; padding-top: 0.9rem; border-top: 1px solid var(--sl-color-gray-5); }
+	.fc-a[hidden] { display: none; }
+	.fc-hint { margin-top: auto; font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); }
+	.fc-actions { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 0.5rem; }
+	.fc-btn {
+		font: inherit; font-size: var(--sl-text-sm); padding: 0.6rem 0.9rem; border-radius: 0.5rem; cursor: pointer;
+		border: 1px solid var(--sl-color-gray-5); background: transparent; color: var(--sl-color-text);
+	}
+	.fc-btn:hover { border-color: var(--sl-color-accent); }
+	.fc-got { background: var(--sl-color-accent); color: var(--sl-color-black); border-color: var(--sl-color-accent); font-weight: 600; }
+	.fc-btn kbd { font-size: 0.75em; opacity: 0.7; margin-left: 0.25rem; }
+	.fc-foot { font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); margin: 0; }
+	.fc-link { font: inherit; background: none; border: none; padding: 0; color: var(--sl-color-text-accent); text-decoration: underline; cursor: pointer; }
+	@media (max-width: 40rem) {
+		.fc-actions { grid-template-columns: 1fr 1fr; }
+		.fc-prev { order: 3; } .fc-next { order: 4; }
+		.fc-btn kbd { display: none; }
+		.fc-q { font-size: var(--sl-text-lg); }
+	}
+</style>
