@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Every SQL example from the notes: Postgres, Hive, Redshift, Snowflake, Databricks and Synapse, grouped by training day. Each example is titled with the question it answers in the notes; the day heading links to the full notes for context. Use the copy button on any block.
-**75 examples.**
+**82 examples.**
 
 
 Code marked "from the class demo (not exact)" in the notes was rewritten from the demo, so check names and paths before running it.
@@ -1222,4 +1222,140 @@ SELECT DATEADD(hour, DATEDIFF(hour, 0, snapshot_time), 0) AS snapshot_hour,
        SUM(num_docks_available)   AS total_docks
 FROM dbo.v_station_availability
 GROUP BY DATEADD(hour, DATEDIFF(hour, 0, snapshot_time), 0);
+```
+
+## Training 32: Microsoft Fabric Lakehouse
+
+[Open the Training 32 notes](/training-notes-site/notes/training-32/)
+
+### What's the difference between SELECT TOP 20 and LIMIT 20?
+
+```sql
+-- T-SQL (Azure SQL)
+SELECT TOP 20 * FROM dbo.patient_encounters;
+
+-- Data quality check: encounters still missing a discharge date
+SELECT
+    COUNT(*) AS total_encounters,
+    SUM(CASE WHEN discharge_date IS NULL THEN 1 ELSE 0 END) AS missing_discharge_dates
+FROM dbo.patient_encounters;
+-- Result in class: 10,150 total, 201 missing → 201 patients admitted but not yet discharged
+```
+
+## Training 34: GCP Intro, Beam and Storage Transfer
+
+[Open the Training 34 notes](/training-notes-site/notes/training-34/)
+
+### What was Plan B?
+
+```sql
+-- from the class demo (not exact)
+CREATE DATABASE citibike;
+\c citibike
+CREATE TABLE IF NOT EXISTS citibike_bronze (
+    id           BIGSERIAL PRIMARY KEY,
+    source_file  TEXT UNIQUE NOT NULL,
+    feed_type    TEXT,
+    ingested_at  TIMESTAMPTZ DEFAULT now(),
+    payload      JSONB
+);
+-- check without dumping the huge JSON payloads:
+SELECT feed_type, COUNT(*) FROM citibike_bronze GROUP BY feed_type;
+```
+
+## Training 35: Dataflow, BigQuery and Looker Studio
+
+[Open the Training 35 notes](/training-notes-site/notes/training-35/)
+
+### How did he create the star schema?
+
+```sql
+-- from the class demo (not exact)
+CREATE SCHEMA IF NOT EXISTS citibike;     -- a BigQuery "dataset" (bq mk --dataset also works)
+
+CREATE TABLE IF NOT EXISTS citibike.dim_station (
+  station_id     STRING NOT NULL,
+  station_name   STRING,
+  latitude       FLOAT64,
+  longitude      FLOAT64,
+  capacity       INT64,
+  last_updated   TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS citibike.fact_station_snapshot (
+  station_id           STRING NOT NULL,
+  snapshot_ts          TIMESTAMP,
+  bikes_available      INT64,
+  docks_available      INT64,
+  is_renting           BOOL,
+  is_returning         BOOL
+)
+PARTITION BY DATE(snapshot_ts)
+CLUSTER BY station_id;
+```
+
+### What did the data look like?
+
+```sql
+-- from the class demo (not exact)
+SELECT COUNT(DISTINCT snapshot_ts)   AS snapshots,
+       COUNT(*)                      AS rows_loaded,
+       COUNT(DISTINCT station_id)    AS unique_stations,
+       MIN(snapshot_ts)              AS first_snapshot,
+       MAX(snapshot_ts)              AS last_snapshot,
+       SUM(bikes_available)          AS total_bikes_observed
+FROM citibike.fact_station_snapshot;
+```
+
+### How did he build the dashboard view?
+
+```sql
+-- from the class demo (not exact)
+CREATE OR REPLACE VIEW citibike.v_station_latest AS
+WITH latest AS (
+  SELECT *
+  FROM citibike.fact_station_snapshot
+  WHERE TRUE
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY station_id ORDER BY snapshot_ts DESC) = 1
+)
+SELECT f.station_id,
+       d.station_name,
+       d.latitude,
+       d.longitude,
+       d.capacity,
+       f.snapshot_ts,
+       f.bikes_available,
+       f.docks_available,
+       ROUND(SAFE_DIVIDE(f.bikes_available, d.capacity) * 100, 1) AS availability_pct
+FROM latest f
+JOIN citibike.dim_station d USING (station_id);
+
+SELECT * FROM citibike.v_station_latest LIMIT 20;
+```
+
+### What analytics queries did he run?
+
+```sql
+-- from the class demo (not exact)
+SELECT CASE WHEN capacity < 20 THEN 'small'
+            WHEN capacity < 40 THEN 'medium'
+            ELSE 'large' END            AS size_class,
+       COUNT(*)                         AS stations,
+       ROUND(AVG(availability_pct), 1)  AS avg_availability_pct
+FROM citibike.v_station_latest
+GROUP BY size_class
+ORDER BY stations DESC;
+```
+
+### How did he get the map to work?
+
+```sql
+-- from the class demo (not exact)
+CREATE OR REPLACE VIEW citibike.v_station_map AS
+SELECT station_id,
+       station_name,
+       bikes_available,
+       availability_pct,
+       CONCAT(CAST(latitude AS STRING), ',', CAST(longitude AS STRING)) AS map_coordinates
+FROM citibike.v_station_latest;
 ```

@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Shell commands, Dockerfiles, YAML, JSON policies and other config from the notes, grouped by training day. Each example is titled with the question it answers in the notes; the day heading links to the full notes for context. Use the copy button on any block.
-**45 examples.**
+**53 examples.**
 
 
 Code marked "from the class demo (not exact)" in the notes was rewritten from the demo, so check names and paths before running it.
@@ -760,4 +760,133 @@ az role assignment create \
   --role "Storage Blob Data Contributor" --scope "$SA_ID"
 
 az role assignment list --assignee "$ADF_PRINCIPAL_ID" --scope "$SA_ID" -o table
+```
+
+## Training 33: Fabric Direct Lake and Event Hubs Streaming
+
+[Open the Training 33 notes](/training-notes-site/notes/training-33/)
+
+### What went wrong with mirroring?
+
+```bash
+# Enable a system-assigned managed identity on the Azure SQL logical server
+az sql server update \
+  --resource-group <rg> --name <sql-server-name> \
+  --identity-type SystemAssigned
+
+az sql server show -g <rg> -n <sql-server-name> --query identity
+# expect: { "type": "SystemAssigned", "principalId": "<guid>", ... }
+```
+
+### What did the producer and consumer look like?
+
+```bash
+python3 -m venv venv
+source venv/bin/activate          # forgetting this step caused "module not found" in class
+pip install azure-eventhub
+
+export EVENTHUB_SEND_CONNECTION_STRING='<hospital-producer primary connection string>'
+export EVENTHUB_LISTEN_CONNECTION_STRING='<hospital-consumer primary connection string>'
+export EVENTHUB_NAME='patient-events'
+```
+
+## Training 34: GCP Intro, Beam and Storage Transfer
+
+[Open the Training 34 notes](/training-notes-site/notes/training-34/)
+
+### Do we need to enable APIs? Some ask for subscriptions. (a student)
+
+```bash
+# standard gcloud syntax
+gcloud services list --enabled
+gcloud services enable storage.googleapis.com bigquery.googleapis.com \
+    dataflow.googleapis.com storagetransfer.googleapis.com
+```
+
+### What CLI commands did Evan show?
+
+```bash
+# from the class demo (not exact)
+gcloud --version
+gcloud auth list                                   # which Google account is active
+gcloud config get-value project                    # current project
+gcloud projects list                               # all your projects
+gcloud config set project <PROJECT_ID>
+gcloud auth application-default set-quota-project <PROJECT_ID>   # fixes the quota-project warning
+gcloud billing projects describe <PROJECT_ID>      # billingEnabled: true/false
+bq ls                                              # BigQuery has its own CLI: bq
+```
+
+### How did the STS transfer go?
+
+```bash
+# standard gcloud syntax for the same job
+gcloud transfer jobs create s3://citibike-nyc-pipeline gs://citibike-bronze \
+    --source-creds-file=aws-role.json        # {"roleArn": "arn:aws:iam::<acct>:role/<sts-role>"}
+gcloud transfer jobs list
+gcloud transfer operations list --job-names=<JOB_NAME>
+gcloud storage ls -r gs://citibike-bronze/ | head
+```
+
+## Training 35: Dataflow, BigQuery and Looker Studio
+
+[Open the Training 35 notes](/training-notes-site/notes/training-35/)
+
+### What setup did Dataflow need?
+
+```bash
+# from the class demo (not exact)
+export PROJECT_ID=<your-project-id>
+export REGION=us-central1
+export BUCKET=<your-bucket>
+export PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+export WORKER_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+echo $PROJECT_NUMBER $WORKER_SA
+
+gcloud services enable dataflow.googleapis.com bigquery.googleapis.com storage.googleapis.com
+
+# check / grant the worker roles
+gcloud projects get-iam-policy "$PROJECT_ID" \
+  --flatten="bindings[].members" --filter="bindings.members:$WORKER_SA" \
+  --format="table(bindings.role)"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$WORKER_SA" --role="roles/dataflow.worker"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$WORKER_SA" --role="roles/storage.objectAdmin"
+```
+
+### How do you test locally, then run in the cloud?
+
+```bash
+# from the class demo (not exact)
+SAMPLE_URI=$(gcloud storage ls -r "gs://$BUCKET/bronze/**station_information*.json" | head -1)
+gcloud storage cp "$SAMPLE_URI" /tmp/citibike_sample.json
+mkdir -p /tmp/citibike_silver
+
+python bronze_to_silver.py \
+  --input /tmp/citibike_sample.json \
+  --output /tmp/citibike_silver/stations \
+  --runner DirectRunner
+
+python bronze_to_silver.py \
+  --input "gs://$BUCKET/bronze/**station_information*.json" \
+  --output "gs://$BUCKET/silver/station_information/stations" \
+  --runner DataflowRunner \
+  --project "$PROJECT_ID" --region "$REGION" \
+  --temp_location "gs://$BUCKET/dataflow/temp" \
+  --staging_location "gs://$BUCKET/dataflow/staging" \
+  --job_name citibike-bronze-to-silver \
+  --worker_machine_type e2-standard-2 \
+  --num_workers 1 --max_num_workers 2 \
+  --save_main_session
+```
+
+### How was the fact table filled?
+
+```bash
+# from the class demo (not exact): validate Silver from the CLI
+gcloud storage ls "gs://$BUCKET/silver/station_status/"
+gcloud storage cat "gs://$BUCKET/silver/station_status/*.jsonl" | head -5
+gcloud storage cat "gs://$BUCKET/silver/station_status/*.jsonl" | wc -l
+gcloud dataflow jobs list --region "$REGION"
 ```
