@@ -1,49 +1,39 @@
-# Starlight Starter Kit: Basics
+# Big Data Handbook
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+**Live site: https://mobile-consulting-solutions-training.github.io/training-notes-site/**
 
+A shared study handbook for the 45-day Data Engineering bootcamp: class notes, study guides, vocabulary, walkthroughs and interview prep, all in one searchable site.
+
+## What's inside
+
+| Section | What you'll find |
+|---|---|
+| **Notes** | One page per training day: definitions, expanded explanations, comparison tables and demo code |
+| **Study Guides** | Per-day summary, cheat sheet and spoken-quiz flashcards |
+| **Vocabulary** | Per-day glossary of every term covered |
+| **Walkthroughs** | Step-by-step rebuilds of the class pipelines (AWS, Hive/Spark, star schemas, and more) |
+| **Homework** | Assignment prompts only, never answers |
+| **Final Project** | Capstone requirements and timeline |
+| **Reference** | Cheat sheets, AWS/Azure/GCP comparison, pipeline diagrams, code library (Python, SQL, Scala, shell), errors and fixes, tool index, videos |
+| **Interview Prep** | Question bank for big data, cloud/DevOps, programming, platforms and behavioral rounds |
+| **Practice** | Interactive flashcards and SQL practice problems |
+| **What's New** | Recent additions |
+
+## Topics covered
+
+Python and SQL foundations → Hadoop, Hive and Spark → data modeling and star schemas → AWS (S3, Glue, Redshift, EMR, Lambda) → Databricks, Delta Lake and MLflow → Azure (ADLS, Data Factory, Synapse, Event Hubs, Fabric) → GCP (BigQuery, Dataflow, Pub/Sub, Looker Studio) → capstone project.
+
+## Notes on content
+
+- Code is reconstructed from class demos, not copied exactly. Check it before you rely on it.
+- Pages are updated as the course goes on. See **What's New** for the latest.
+
+## Running locally
+
+```bash
+npm install
+npm run dev      # http://localhost:4321/training-notes-site/
+npm run build    # static output in dist/
 ```
-npm create astro@latest -- --template starlight
-```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
-
-## 🚀 Project Structure
-
-Inside of your Astro + Starlight project, you'll see the following folders and files:
-
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
-```
-
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
-
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
-
-Static assets, like favicons, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+Built with [Astro Starlight](https://starlight.astro.build). Pushing to `main` deploys to GitHub Pages.
