@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Every Python, pandas and PySpark example from the notes, grouped by training day. Each example is titled with the question it answers in the notes; the day heading links to the full notes for context. Use the copy button on any block.
-**81 examples.**
+**94 examples.**
 
 
 Code marked "from the class demo (not exact)" in the notes was rewritten from the demo, so check names and paths before running it.
@@ -2353,4 +2353,468 @@ print("bronze station rows:", flat.count(), " silver rows:", silver.count())
 
 silver.coalesce(4).write.mode("overwrite").parquet(silver_path)
 spark.read.parquet(silver_path).display()
+```
+
+## Training 32: Microsoft Fabric Lakehouse
+
+[Open the Training 32 notes](/training-notes-site/notes/training-32/)
+
+### How do you create a notebook and attach the lakehouse?
+
+```python
+# Cell 1 - confirm the lakehouse is attached
+spark.sql("SHOW TABLES").show()
+
+# Cell 2 - read bronze into a DataFrame
+bronze = spark.read.table("hospital_lakehouse.dbo.patient_encounters")
+display(bronze)
+```
+
+### What did the bronze → silver transformation do?
+
+```python
+from pyspark.sql import functions as F
+
+silver = (
+    bronze.select(
+        F.col("encounter_id").cast("string").alias("encounter_id"),
+        F.col("patient_id").cast("string").alias("patient_id"),
+        F.col("admit_date").cast("date").alias("admit_date"),
+        F.col("discharge_date").cast("date").alias("discharge_date"),
+        F.upper(F.trim(F.col("diagnosis_code"))).alias("diagnosis_code"),
+    )
+    .withColumn("source_hospital", F.lit("hospital_c"))
+    .dropDuplicates(["encounter_id"])
+    .filter(F.col("encounter_id").isNotNull() & F.col("patient_id").isNotNull())
+    # keep rows still admitted (no discharge yet) OR with a logical date order
+    .filter(F.col("discharge_date").isNull() | (F.col("discharge_date") >= F.col("admit_date")))
+)
+
+print(bronze.count(), silver.count())   # silver slightly smaller, as expected
+
+silver.write.format("delta").mode("overwrite").saveAsTable("silver_patient_encounters")
+```
+
+### How was silver enriched and turned into gold?
+
+```python
+from pyspark.sql.window import Window
+
+w = Window.partitionBy("patient_id").orderBy("admit_date", "encounter_id")
+
+enriched = (
+    spark.read.table("silver_patient_encounters")
+    .withColumn("prev_discharge", F.lag("discharge_date").over(w))
+    .withColumn("days_since_discharge", F.datediff("admit_date", "prev_discharge"))
+    .withColumn("readmitted_30d",
+                F.when(F.col("days_since_discharge").between(0, 30), 1).otherwise(0))
+    .withColumn("length_of_stay_days", F.datediff("discharge_date", "admit_date"))
+)
+
+# Gold 1 - one row per hospital
+gold_hospital = (enriched.groupBy("source_hospital").agg(
+    F.count("*").alias("total_encounters"),
+    F.countDistinct("patient_id").alias("unique_patients"),
+    F.sum("readmitted_30d").alias("readmissions_30d"),
+    F.round(F.sum("readmitted_30d") / F.count("*") * 100, 2).alias("readmission_rate_pct"),
+    F.round(F.avg("length_of_stay_days"), 2).alias("avg_length_of_stay_days")))
+gold_hospital.write.format("delta").mode("overwrite").saveAsTable("gold_hospital_metrics")
+
+# Gold 2 - one row per diagnosis (main Power BI dataset)
+gold_diagnosis = (enriched.filter(F.col("diagnosis_code").isNotNull())
+    .groupBy("diagnosis_code").agg(
+        F.count("*").alias("total_encounters"),
+        F.sum("readmitted_30d").alias("readmissions_30d"),
+        F.round(F.sum("readmitted_30d") / F.count("*") * 100, 2).alias("readmission_rate_pct"),
+        F.round(F.avg("length_of_stay_days"), 2).alias("avg_length_of_stay_days")))
+gold_diagnosis.write.format("delta").mode("overwrite").saveAsTable("gold_diagnosis_metrics")
+
+# Gold 3 - one row per admit month
+gold_monthly = (enriched.withColumn("admit_month", F.date_trunc("month", "admit_date"))
+    .groupBy("admit_month").agg(
+        F.count("*").alias("total_encounters"),
+        F.sum("readmitted_30d").alias("readmissions_30d")))
+gold_monthly.write.format("delta").mode("overwrite").saveAsTable("gold_monthly_metrics")
+```
+
+## Training 33: Fabric Direct Lake and Event Hubs Streaming
+
+[Open the Training 33 notes](/training-notes-site/notes/training-33/)
+
+### What did the producer and consumer look like?
+
+```python
+# producer.py
+import json, os, random, time, uuid
+from datetime import datetime, timezone
+from azure.eventhub import EventHubProducerClient, EventData
+
+CONN = os.environ["EVENTHUB_SEND_CONNECTION_STRING"]
+HUB = os.environ["EVENTHUB_NAME"]
+
+def generate_event():
+    return {
+        "event_id": str(uuid.uuid4()),
+        "event_type": random.choice(["admission", "admission", "discharge", "transfer"]),
+        "facility_id": random.choice(["hospital-a", "hospital-b", "hospital-c"]),
+        "patient_id": f"P{random.randint(1, 5000):05d}",
+        "diagnosis_code": random.choice(["J18.9", "I10", "E11.9", "N39.0", "I50.9"]),
+        "event_timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+def main():
+    producer = EventHubProducerClient.from_connection_string(CONN, eventhub_name=HUB)
+    print("Producing events... Ctrl+C to stop")
+    with producer:
+        while True:                       # infinite loop: runs until stopped
+            event = generate_event()
+            batch = producer.create_batch()
+            batch.add(EventData(json.dumps(event)))
+            producer.send_batch(batch)
+            print("sent", event["event_type"], event["facility_id"])
+            time.sleep(2)                 # one event every 2 seconds
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Producer stopped.")
+```
+
+```python
+# consumer.py
+import json, os
+from azure.eventhub import EventHubConsumerClient
+
+CONN = os.environ["EVENTHUB_LISTEN_CONNECTION_STRING"]
+HUB = os.environ["EVENTHUB_NAME"]
+
+def on_event(partition_context, event):
+    e = json.loads(event.body_as_str())
+    print(partition_context.partition_id, e["event_type"], e["facility_id"], e["patient_id"])
+
+consumer = EventHubConsumerClient.from_connection_string(
+    CONN, consumer_group="$Default", eventhub_name=HUB)
+
+try:
+    with consumer:
+        consumer.receive(on_event=on_event, starting_position="-1")  # "-1" = from the beginning
+except KeyboardInterrupt:
+    print("Consumer stopped.")
+```
+
+### What did the streaming notebook do?
+
+```python
+from pyspark.sql import functions as F
+
+bronze_ev = spark.read.table("bronze_patient_events")
+
+# Silver: typed, validated, deduped streaming events
+silver_ev = (bronze_ev
+    .withColumn("event_ts", F.to_timestamp("event_timestamp"))
+    .withColumn("event_type", F.lower(F.trim("event_type")))
+    .filter(F.col("event_id").isNotNull() & F.col("patient_id").isNotNull())
+    .filter(F.col("event_type").isin("admission", "discharge", "transfer"))
+    .dropDuplicates(["event_id"]))
+silver_ev.write.format("delta").mode("overwrite").saveAsTable("silver_patient_events")
+
+# Unified table: batch encounters + a per-patient summary of streaming events
+event_summary = silver_ev.groupBy("patient_id").agg(F.count("*").alias("stream_event_count"))
+unified = (spark.read.table("silver_patient_encounters")
+    .join(event_summary, "patient_id", "left"))
+unified.write.format("delta").mode("overwrite").saveAsTable("silver_unified_encounters")
+
+display(spark.read.table("silver_unified_encounters").limit(10))
+```
+
+### What were the streaming gold tables?
+
+```python
+is_adm = (F.col("event_type") == "admission").cast("int")
+is_dis = (F.col("event_type") == "discharge").cast("int")
+is_tra = (F.col("event_type") == "transfer").cast("int")
+
+gold_facility = (silver_ev.groupBy("facility_id").agg(
+        F.count("*").alias("total_events"),
+        F.sum(is_adm).alias("admissions"),
+        F.sum(is_dis).alias("discharges"),
+        F.sum(is_tra).alias("transfers"))
+    .withColumn("net_admissions", F.col("admissions") - F.col("discharges")))
+
+gold_timeline = (silver_ev.groupBy(F.window("event_ts", "5 minutes")).agg(
+        F.count("*").alias("events"),
+        F.sum(is_adm).alias("admissions"),
+        F.sum(is_dis).alias("discharges"),
+        F.sum(is_tra).alias("transfers"))
+    .select(F.col("window.start").alias("window_start"), "events",
+            "admissions", "discharges", "transfers"))
+
+gold_diag = silver_ev.groupBy("diagnosis_code").agg(F.count("*").alias("events"))
+
+for name, df in [("gold_live_facility_metrics", gold_facility),
+                 ("gold_live_timeline", gold_timeline),
+                 ("gold_live_diagnosis", gold_diag)]:
+    df.write.format("delta").mode("overwrite").saveAsTable(name)
+print("All three streaming gold tables refreshed")
+```
+
+## Training 34: GCP Intro, Beam and Storage Transfer
+
+[Open the Training 34 notes](/training-notes-site/notes/training-34/)
+
+### What does Beam code look like?
+
+```python
+# from the article Evan shared (not exact)
+import json
+import apache_beam as beam
+
+def parse_json(line):
+    return json.loads(line)
+
+def is_valid(rec):
+    return rec.get("station_id") is not None and rec.get("capacity", 0) > 0
+
+def calc_utilization(rec):
+    rec["utilization"] = rec["num_bikes_available"] / rec["capacity"]
+    return rec
+
+with beam.Pipeline() as pipeline:
+    (pipeline
+     | "ReadJSON"          >> beam.io.ReadFromText("input/*.json")
+     | "ParseJSON"         >> beam.Map(parse_json)
+     | "Validate"          >> beam.Filter(is_valid)
+     | "CalcUtilization"   >> beam.Map(calc_utilization)
+     | "KeyByStation"      >> beam.Map(lambda r: (r["station_id"], r["utilization"]))
+     | "Aggregate"         >> beam.CombinePerKey(max)
+     | "FormatResult"      >> beam.Map(lambda kv: {"station_id": kv[0], "max_util": kv[1]})
+     | "SerializeJSON"     >> beam.Map(json.dumps)
+     | "WriteOutput"       >> beam.io.WriteToText("output/results", file_name_suffix=".json"))
+```
+
+### What is the difference between map and flatMap? (Evan: "a common interview question, or at least a fairly common one")
+
+```python
+# from the class demo (not exact)
+import apache_beam as beam
+
+data = [[1, 2, 3], [4, 5], [6, 7, 8, 9]]
+
+with beam.Pipeline() as p:
+    (p | "Create" >> beam.Create(data)
+       | "Map"    >> beam.Map(lambda xs: [x * 2 for x in xs])
+       | "Print"  >> beam.Map(print))
+# [2, 4, 6]
+# [8, 10]
+# [12, 14, 16, 18]          -> 3 output elements (one per input list)
+
+with beam.Pipeline() as p:
+    (p | "Create"  >> beam.Create(data)
+       | "FlatMap" >> beam.FlatMap(lambda xs: [x * 2 for x in xs])
+       | "Print"   >> beam.Map(print))
+# 2, 4, 6, 8, 10, 12, 14, 16, 18   -> 9 output elements (nesting removed)
+```
+
+### What did he run locally?
+
+```python
+# from the class demo (not exact)
+import argparse, json
+import apache_beam as beam
+from apache_beam.io import fileio
+import pyarrow as pa
+
+SILVER_SCHEMA = pa.schema([
+    ("station_id", pa.string()),
+    ("num_bikes_available", pa.int64()),
+    ("num_docks_available", pa.int64()),
+    ("snapshot_ts", pa.timestamp("s")),
+])
+
+def parse_snapshot(readable_file):
+    doc = json.loads(readable_file.read_utf8())
+    for st in doc.get("data", {}).get("stations", []):
+        yield {**st, "last_updated": doc.get("last_updated")}
+
+def valid_station(rec):
+    return rec.get("station_id") is not None
+
+def to_silver(rec):
+    return {
+        "station_id": str(rec["station_id"]),
+        "num_bikes_available": int(rec.get("num_bikes_available", 0)),
+        "num_docks_available": int(rec.get("num_docks_available", 0)),
+        "snapshot_ts": rec.get("last_updated"),
+    }
+
+def run():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+
+    with beam.Pipeline() as p:   # DirectRunner by default = runs on your laptop
+        (p
+         | "Match"   >> fileio.MatchFiles(args.input)
+         | "Read"    >> fileio.ReadMatches()
+         | "Parse"   >> beam.FlatMap(parse_snapshot)     # one file -> many stations
+         | "Valid"   >> beam.Filter(valid_station)
+         | "Silver"  >> beam.Map(to_silver)
+         | "Write"   >> beam.io.WriteToParquet(args.output, SILVER_SCHEMA))
+
+if __name__ == "__main__":
+    run()
+```
+
+### What was Plan B?
+
+```python
+# from the class demo (not exact)
+import argparse, json, os, pathlib
+import apache_beam as beam
+import psycopg2
+
+def read_bronze_json(path):
+    p = pathlib.Path(path)
+    yield {"source_file": str(p), "feed_type": p.parent.name, "payload": p.read_text()}
+
+class WriteBronzeToPostgres(beam.DoFn):
+    def setup(self):
+        self.conn = psycopg2.connect(dbname="citibike", user=os.environ["PGUSER"],
+                                     password=os.environ["PGPASSWORD"], host="localhost")
+    def process(self, batch):
+        with self.conn.cursor() as cur:
+            for r in batch:
+                cur.execute("""
+                    INSERT INTO citibike_bronze (source_file, feed_type, payload)
+                    VALUES (%s, %s, %s::jsonb)
+                    ON CONFLICT (source_file) DO UPDATE
+                    SET feed_type = EXCLUDED.feed_type,
+                        payload   = EXCLUDED.payload
+                """, (r["source_file"], r["feed_type"], r["payload"]))
+        self.conn.commit()
+    def teardown(self):
+        self.conn.close()
+
+def run():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bronze-root", default="data/bronze")
+    args, beam_args = parser.parse_known_args()
+    files = [str(f) for f in pathlib.Path(args.bronze_root).rglob("*.json")]
+    with beam.Pipeline(argv=beam_args) as p:
+        (p
+         | "CreateFileList" >> beam.Create(files)
+         | "ReadJSON"       >> beam.FlatMap(read_bronze_json)
+         | "Batch"          >> beam.BatchElements(min_batch_size=50, max_batch_size=500)
+         | "WritePostgres"  >> beam.ParDo(WriteBronzeToPostgres()))
+
+if __name__ == "__main__":
+    run()
+```
+
+## Training 35: Dataflow, BigQuery and Looker Studio
+
+[Open the Training 35 notes](/training-notes-site/notes/training-35/)
+
+### What does bronze_to_silver.py do?
+
+```python
+# from the class demo (not exact)
+import argparse, json, logging
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+
+def extract_stations(line):
+    try:
+        doc = json.loads(line)
+    except json.JSONDecodeError:
+        return                                    # invalid document: skip it
+    stations = doc.get("data", {}).get("stations", [])
+    for st in stations:
+        sid, lat, lon = st.get("station_id"), st.get("lat"), st.get("lon")
+        if sid is None or lat is None or lon is None:
+            continue                              # skip to the next station
+        yield {
+            "station_id": str(sid),
+            "name": st.get("name"),
+            "lat": float(lat),
+            "lon": float(lon),
+            "capacity": int(st.get("capacity") or 0),
+            "last_updated": doc.get("last_updated"),
+        }
+
+def run():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
+    known_args, pipeline_args = parser.parse_known_args()
+    options = PipelineOptions(pipeline_args)      # --runner, --project, --region, ... go here
+
+    with beam.Pipeline(options=options) as p:
+        (p
+         | "ReadBronzeJSON"     >> beam.io.ReadFromText(known_args.input)
+         | "ExtractStations"    >> beam.FlatMap(extract_stations)
+         | "ToJSON"             >> beam.Map(json.dumps)
+         | "WriteSilverJSONL"   >> beam.io.WriteToText(known_args.output,
+                                                       file_name_suffix=".jsonl",
+                                                       num_shards=1))
+
+if __name__ == "__main__":
+    logging.getLogger().setLevel(logging.INFO)
+    run()
+```
+
+### What does silver_to_gold.py do?
+
+```python
+# from the class demo (not exact)
+import argparse, json
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+
+SCHEMA = ("station_id:STRING,station_name:STRING,latitude:FLOAT,"
+          "longitude:FLOAT,capacity:INTEGER,last_updated:TIMESTAMP")
+
+def parse_station(line):
+    try:
+        r = json.loads(line)
+        return {
+            "station_id": str(r["station_id"]),
+            "station_name": r.get("name"),
+            "latitude": float(r["lat"]),
+            "longitude": float(r["lon"]),
+            "capacity": int(r.get("capacity") or 0),
+            "last_updated": r.get("last_updated"),
+        }
+    except (KeyError, ValueError, TypeError):
+        return None
+
+def newest_station(records):
+    # CombinePerKey passes an iterable of values for one key
+    return max(records, key=lambda r: r.get("last_updated") or 0)
+
+def run():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--table", required=True)        # project:citibike.dim_station
+    known, beam_args = parser.parse_known_args()
+
+    with beam.Pipeline(options=PipelineOptions(beam_args)) as p:
+        (p
+         | "ReadSilver"        >> beam.io.ReadFromText(known.input)
+         | "ParseRecords"      >> beam.Map(parse_station)
+         | "RemoveInvalid"     >> beam.Filter(lambda x: x is not None)
+         | "KeyByStation"      >> beam.Map(lambda x: (x["station_id"], x))
+         | "LatestPerStation"  >> beam.CombinePerKey(newest_station)
+         | "RemoveKeys"        >> beam.Values()
+         | "WriteToBigQuery"   >> beam.io.WriteToBigQuery(
+                known.table,
+                schema=SCHEMA,
+                method=beam.io.WriteToBigQuery.Method.FILE_LOADS,
+                create_disposition=beam.io.BigQueryDisposition.CREATE_NEVER,
+                write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE))
+
+if __name__ == "__main__":
+    run()
 ```

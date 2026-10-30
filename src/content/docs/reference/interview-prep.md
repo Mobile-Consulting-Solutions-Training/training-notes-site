@@ -175,3 +175,31 @@ The one-line answers at the end of each day's notes.
 | GDPR / CCPA? | EU and California data-privacy laws. They affect where personal data is stored and how it's handled (data residency) |
 | How do you pick an analytics platform? | Start from the business need, data size, budget and existing infrastructure. "The best platform is the one that provides what the business needs in the way the business needs it" |
 | What is MinIO / DuckDB / Iceberg? | MinIO: S3-compatible on-prem object storage. DuckDB: in-process OLAP SQL engine. Iceberg: an open table format (ACID, snapshots) that needs a catalog |
+
+### [Training 34](/training-notes-site/notes/training-34/)
+
+| Question | Your one-line answer |
+|---|---|
+| What is Cloud Dataflow? | GCP's fully managed, autoscaling service for running Apache Beam pipelines, batch or streaming. Same role as Glue or a Databricks notebook |
+| What is Apache Beam? | A unified programming model for batch and streaming. You write the pipeline once and pick a runner (Direct, Dataflow, Spark, Flink) |
+| Dataflow vs Dataproc? | Dataflow = serverless Beam. Dataproc = managed Spark/Hadoop clusters (plus serverless Spark). Choose Dataproc to reuse existing Spark code |
+| What is BigQuery and why was it special? | The first serverless SQL data warehouse: no cluster, cheap storage, billed by bytes queried |
+| `map` vs `flatMap`? | Map is one-to-one; flatMap returns 0..n outputs per input and flattens nested collections |
+| S3 → GCS migration tool? | Storage Transfer Service (STS). DMS is AWS and database-aware; STS moves objects |
+| GCP equivalents of Lambda / ECS / MWAA / RDS? | Cloud Run functions / Cloud Run / Cloud Composer / Cloud SQL |
+| Should a migration transform data? | No. A migration makes a complete, unmodified copy; transform afterwards in a separate step |
+| Medallion layer names? | Bronze/Silver/Gold (most common), also Raw/Curated/Semantic |
+
+### [Training 35](/training-notes-site/notes/training-35/)
+
+| Question | Your one-line answer |
+|---|---|
+| How do you run a Beam pipeline on GCP? | Same script, `--runner DataflowRunner` plus project, region, temp/staging GCS locations and worker settings. Test first with DirectRunner |
+| What runs Dataflow workers and what do they need? | Compute Engine VMs as the default compute service account, with `dataflow.worker`, storage and BigQuery roles |
+| How do you write from Beam to BigQuery? | `WriteToBigQuery` with a schema, a method (file loads / streaming / Storage Write API), and create/write dispositions |
+| Why key, CombinePerKey, then Values? | Per-key operations need (key, value) pairs; drop the key after the aggregation |
+| How do you get the latest row per key in BigQuery? | `QUALIFY ROW_NUMBER() OVER (PARTITION BY key ORDER BY ts DESC) = 1` |
+| How do you cut BigQuery cost? | Partition and cluster tables, select only needed columns, check bytes before running |
+| Should one pipeline feed both a warehouse and a NoSQL store? | Usually two dedicated pipelines, for modularity and easy decommissioning |
+| Is the risk-scoring model the data engineer's job? | No. DE makes inputs available and lands decisions in the stream/warehouse; the model belongs to data science/finance/app teams |
+| Pipeline on every cloud? | Ingest to object storage → process Bronze/Silver/Gold → warehouse → BI/AI |

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-226 errors hit in class and in homework, each with its cause and fix, grouped by tool. Use Ctrl+F / Cmd+F to search for the exact error text you're seeing. The Day column links to that day's notes.
+285 errors hit in class and in homework, each with its cause and fix, grouped by tool. Use Ctrl+F / Cmd+F to search for the exact error text you're seeing. The Day column links to that day's notes.
 
 ## How to debug any of these
 
@@ -36,6 +36,9 @@ sidebar:
 | `curl: (7) Failed to connect` right after `run` | — | Uvicorn needs a second to start. Retry, or `docker logs cicd-homework` | [3](/training-notes-site/notes/training-3/) |
 | `COPY failed: file not found` | — | You ran `docker build` from inside `app/`. Build from the repo root; the `.` is the build context | [3](/training-notes-site/notes/training-3/) |
 | `denied` / `unauthorized` on `docker pull` | — | GHCR packages are often private by default. Either set the package's visibility to public in its package settings, or `docker login ghcr.io` with your own token that can read packages. Never put that token in the repo | [3](/training-notes-site/notes/training-3/) |
+| No Import option visible / already Direct Lake | Direct Lake is the default for lakehouse models | Nothing to fix | [33](/training-notes-site/notes/training-33/) |
+| Consumer missing connection string | Env vars set in another terminal | Re-export or `source setup_env.sh` | [33](/training-notes-site/notes/training-33/) |
+| `connection to localhost failed` (password) | — | Export the right `PGUSER` / `PGPASSWORD` (Evan's defaulted to his own username) | [34](/training-notes-site/notes/training-34/) |
 
 ## Git, CI/CD and Python environments
 
@@ -56,6 +59,10 @@ sidebar:
 | Workflow never starts | — | Pushed to a branch other than `main`, or the file isn't in `.github/workflows/` | [3](/training-notes-site/notes/training-3/) |
 | `manifest unknown` | — | Wrong owner path (old vs new, see above) or the push step didn't run | [3](/training-notes-site/notes/training-3/) |
 | Warning that the image platform `linux/amd64` doesn't match the host | — | GitHub's runner builds amd64 images. Usually it still runs; the warning is informational | [3](/training-notes-site/notes/training-3/) |
+| `No module named psycopg2` | — | Python version changed for GCP; reinstall in the active venv | [34](/training-notes-site/notes/training-34/) |
+| psycopg2 build fails (`pg_config` / header not found) | — | `sudo apt install libpq-dev build-essential` (Linux) or `brew install libpq` (Mac), or just `pip install psycopg2-binary` | [34](/training-notes-site/notes/training-34/) |
+| psycopg2 build failure | — | `libpq-dev` + `build-essential`, or `psycopg2-binary` | [34](/training-notes-site/notes/training-34/) |
+| NumPy/`array_api` AttributeError locally | — | Pin `numpy<2`, reinstall pandas, `pip check` | [35](/training-notes-site/notes/training-35/) |
 
 ## Postgres and SQL basics
 
@@ -79,6 +86,9 @@ sidebar:
 | `[DATA_SOURCE_NOT_FOUND] Failed to find the data source: mongodb` | MongoDB **Spark connector** missing, even though MongoDB was running | Add `org.mongodb.spark:mongo-spark-connector_2.13:10.5.0` to `--packages` | [13](/training-notes-site/notes/training-13/) |
 | `NoSuchElementException: key not found: PG_PASSWORD` | Env var not exported in this shell | Export it, then re-run | [9](/training-notes-site/notes/training-9/), [11](/training-notes-site/notes/training-11/) |
 | Wall of log text | Spark INFO logging | Set `spark.sparkContext.setLogLevel("ERROR")`. In a big stack trace, look for the one meaningful line | [12](/training-notes-site/notes/training-12/) |
+| No "open notebook" in the lakehouse | Only Spark SQL query offered there | Workspace → New item → Notebook | [32](/training-notes-site/notes/training-32/) |
+| `The operation is missing input` | Lakehouse destination not connected | Draw the connector on the canvas | [33](/training-notes-site/notes/training-33/) |
+| `SELECT TOP` syntax error in notebook | PySpark cell, not T-SQL | `display(df.limit(10))` | [33](/training-notes-site/notes/training-33/) |
 | `java.lang.IllegalAccessError ... sun.nio.ch` on JDK 17 | — | Spark 3.x on JDK 17 sometimes needs `--add-opens` VM options. Bring the exact text and we'll pick the right ones | [9](/training-notes-site/notes/training-9/) |
 | `Detected implicit cartesian product` | — | Happens when a join has no usable condition. You have `lit(false)` as the condition, so you shouldn't see it. If you do, bring the text | [9](/training-notes-site/notes/training-9/) |
 | Join returns 0 rows in Task 4 | — | Key types differ (for example text vs integer) or values don't match. Compare `printSchema()` for both sides | [9](/training-notes-site/notes/training-9/) |
@@ -178,8 +188,8 @@ sidebar:
 | (Students) S3 403 on `GetObject` | `GetObject` was only allowed on Evan's bucket objects | Added `arn:aws:s3:::<student-bucket>/*` | [28](/training-notes-site/notes/training-28/) |
 | `argument subcommand: Found invalid choice 'create-bucket'` from `aws s3 create bucket ...` | — | `aws s3api create-bucket ...` or `aws s3 mb s3://name` | [19](/training-notes-site/notes/training-19/) |
 | `InvalidAccessKeyId: The AWS Access Key Id you provided does not exist in our records` | — | Remove/fix the exports, or pass `--profile company` | [19](/training-notes-site/notes/training-19/) |
+| (Practice note) keys pasted into `.bashrc` | — | Use `aws configure --profile` instead | [19](/training-notes-site/notes/training-19/) |
 | `BucketAlreadyExists: The requested bucket name is not available. The bucket namespace is shared by all users of the system.` | Bucket names are **globally unique across all AWS accounts**, and someone already owns `citi-bike-nyc` | Pick a more specific name. Evan switched to `citi-bike-nyc-pipeline`. Put **your name** in yours | [19](/training-notes-site/notes/training-19/) |
-| `IllegalLocationConstraintException: The unspecified location constraint is incompatible for the region specific endpoint this request was sent to.` | **Every region except `us-east-1`** needs `--create-bucket-configuration LocationConstraint=<region>` | Add it. ChatGPT on screen: "S3 has an odd special case: `us-east-1` doesn't require LocationConstraint, but other regions do." | [19](/training-notes-site/notes/training-19/) |
 | Glue write failed, `TASK_WRITE_FAILED` | — | The Glue role lacked `s3:PutObject` on the new Silver prefix. Confirmed with `simulate-principal-policy` (`implicitDeny` → `allowed`) | [24](/training-notes-site/notes/training-24/) |
 | "Missing required arguments" | — | The console Run button doesn't pass parameters. Start the job from the CLI with `--arguments` | [24](/training-notes-site/notes/training-24/) |
 | Job run not visible in the console | — | Check the region, open the job's Runs tab, use View details | [24](/training-notes-site/notes/training-24/) |
@@ -189,6 +199,16 @@ sidebar:
 | `Glue.ConcurrentRunsExceededException` | — | Max concurrency 1 (good). Another run is going; don't start overlapping executions | [26](/training-notes-site/notes/training-26/) |
 | `NoCredentialsError` / `The config profile (x) could not be found` | No CLI profile on this machine, or the wrong name | Set up the profile with `aws configure --profile <name>` (keys never in code) | [26](/training-notes-site/notes/training-26/) |
 | `UnrecognizedClientException` / "not able to validate the provided credentials" | Authentication, not permission (Training 25) | Pass the right `--profile` / `AWS_PROFILE` | [26](/training-notes-site/notes/training-26/) |
+| AWS console stuck loading | Console "new experience" glitch | Use the AWS CLI | [32](/training-notes-site/notes/training-32/) |
+| ADLS copy job: `Invalid credentials` | No usable key/SAS/service principal | SAS token or a service principal with Storage Blob Data Reader | [32](/training-notes-site/notes/training-32/) |
+| S3: `s3:// scheme isn't supported` | Connector wants HTTPS URL | `https://<bucket>.s3.<region>.amazonaws.com` | [32](/training-notes-site/notes/training-32/) |
+| S3: connected but empty | Region / IAM ListBucket | Fix the region in the URL, add `s3:ListBucket` | [32](/training-notes-site/notes/training-32/) |
+| Mirroring: invalid credentials | Bad org-account / SQL password | Reset password, use SQL auth | [33](/training-notes-site/notes/training-33/) |
+| 403 "authenticating using application default credentials… requires a quota project" | ADC had no quota project | `gcloud auth application-default set-quota-project <PROJECT_ID>` (then a 200) | [34](/training-notes-site/notes/training-34/) |
+| Job ran (2.68 of 4.24 GB) but "permission denied", bucket empty | Policy only on a prefix | Broaden the S3 policy, rerun | [34](/training-notes-site/notes/training-34/) |
+| DMS `CreateEndpoint` not authorized | — | Needs IAM permission from the admin | [34](/training-notes-site/notes/training-34/) |
+| STS "no connected agents" | — | Pick source type Amazon S3, not S3-compatible | [34](/training-notes-site/notes/training-34/) |
+| STS access denied / permission denied | — | Correct trust role, quota project, and a policy covering the whole path | [34](/training-notes-site/notes/training-34/) |
 
 ## Terraform and Step Functions
 
@@ -218,6 +238,7 @@ sidebar:
 | `MERGE INTO` syntax errors over and over | — | Replaced with `INSERT … WHERE NOT EXISTS` | [24](/training-notes-site/notes/training-24/) |
 | Query editor ran only part of the script | — | Something was highlighted. Deselect everything | [24](/training-notes-site/notes/training-24/) |
 | Told to `CALL` before `CREATE PROCEDURE` | — | Create first | [24](/training-notes-site/notes/training-24/) |
+| AI added DynamoDB | — | Checkpoint kept in Redshift | [24](/training-notes-site/notes/training-24/) |
 | Window skipped boundary files | — | `start < ts < end` → `start <= ts < end` | [24](/training-notes-site/notes/training-24/) |
 | `permission denied for relation …` (×2) | — | Redshift `GRANT`s to `IAMR:<role>` | [24](/training-notes-site/notes/training-24/), [25](/training-notes-site/notes/training-25/) |
 | `syntax error at or near "QUALIFY"` | You pasted a Redshift version | Postgres has no QUALIFY. Use your subquery version | [22](/training-notes-site/notes/training-22/) |
@@ -272,6 +293,9 @@ sidebar:
 | Every station 100% empty **and** 100% full | 55 inactive stations (0 bikes and 0 docks, flags = 0) | Classify `INACTIVE`, then filter to active stations | [31](/training-notes-site/notes/training-31/) |
 | Spark cell "hangs" for minutes | Provisioned Spark pool cold start (~3–4 min) | Expected; later cells are fast | [31](/training-notes-site/notes/training-31/) |
 | Power BI `Invalid credentials` | Probably the wrong server name | Use `<workspace>-ondemand.sql.azuresynapse.net` | [31](/training-notes-site/notes/training-31/) |
+| `All administrators must belong to the same tenant` | Fabric capacity admin from another tenant | Use the trial capacity / ask the tenant admin | [32](/training-notes-site/notes/training-32/) |
+| `cannot mirror ... managed identity across tenants` | SQL server and Fabric in different tenants | Same-tenant setup; otherwise not possible | [33](/training-notes-site/notes/training-33/) |
+| `module not found: azure` | venv not activated | `source venv/bin/activate` | [33](/training-notes-site/notes/training-33/) |
 
 ## Azure Data Factory
 
@@ -298,7 +322,6 @@ sidebar:
 | `TABLE_OR_VIEW_NOT_FOUND` | — | Typo in the three-part name, or Gold cell never ran in this catalog. `SHOW TABLES IN <your-catalog>.gold;` | [28](/training-notes-site/notes/training-28/), [30](/training-notes-site/notes/training-30/) |
 | Syntax error near `DESCRIBE` / second statement | — | One statement per line, each ending in `;` (the class hit this) | [28](/training-notes-site/notes/training-28/) |
 | Cell runs as Python | — | The `%sql` must be the very first line of the cell | [28](/training-notes-site/notes/training-28/) |
-| `Cannot time travel Delta table to version X` / version doesn't exist | — | Check `DESCRIBE HISTORY` for the real version numbers (they start at 0) | [30](/training-notes-site/notes/training-30/) |
 | Error about files missing after VACUUM | — | The old version's files were vacuumed; that version can't be read or restored | [30](/training-notes-site/notes/training-30/) |
 
 ## MLflow
@@ -316,11 +339,52 @@ sidebar:
 
 | Error / symptom | Cause | Fix | Day |
 |---|---|---|---|
+| Merging data from multiple source systems with overlapping/colliding business keys is unsafe | — | Surrogate keys are generated fresh by the warehouse, so collisions across sources are impossible | [5](/training-notes-site/notes/training-5/) |
 | Double-counted totals | — | Write the grain sentence first; one grain per fact | [21](/training-notes-site/notes/training-21/) |
 | Absurd totals (millions of "bikes") | — | `AVG`/`MIN`/`MAX`/last value over time | [21](/training-notes-site/notes/training-21/) |
 | Small stations distort citywide numbers | — | Store additive parts, recompute ratios | [21](/training-notes-site/notes/training-21/) |
-| Huge fact, inconsistent names | — | Move them to a dimension (Evan moved `capacity`) | [21](/training-notes-site/notes/training-21/) |
 | Orphaned facts silently dropped by inner joins | — | Load dims first; run the orphan check; use an "Unknown" member row (key -1) for late-arriving dimensions | [21](/training-notes-site/notes/training-21/) |
 | Past reports change after an update | — | SCD Type 2 | [21](/training-notes-site/notes/training-21/) |
 | Gaps disappear from charts | — | Pre-generate the calendar | [21](/training-notes-site/notes/training-21/) |
 | Fan-out (row multiplication) | — | Aggregate each fact to a common grain first, then join on conformed dimensions | [21](/training-notes-site/notes/training-21/) |
+
+## Other
+
+| Error / symptom | Cause | Fix | Day |
+|---|---|---|---|
+| Inconsistent category capitalization | — | `df['category'].str.strip().str.title()` | [5](/training-notes-site/notes/training-5/) |
+| Invalid/malformed dates | — | `pd.to_datetime(..., errors='coerce')` - turns bad dates into `NaT` instead of crashing the whole job | [5](/training-notes-site/notes/training-5/) |
+| Invalid numeric values (e.g. unit price) | — | Numeric conversion with `errors='coerce'` - turns bad values into `NaN` | [5](/training-notes-site/notes/training-5/) |
+| Duplicate transaction IDs | — | `df.drop_duplicates(subset='transaction_id')` | [5](/training-notes-site/notes/training-5/) |
+| Business-rule violations (negative quantity, non-positive price, invalid date) | — | Filtered out with boolean conditions (`quantity > 0`, `unit_price > 0`, date not null) | [5](/training-notes-site/notes/training-5/) |
+| No standardized derived fields | — | Added a computed `sales_amount = quantity * unit_price` column | [5](/training-notes-site/notes/training-5/) |
+| Works | — | Files appeared every 5 minutes (hour=20 showed up) | [19](/training-notes-site/notes/training-19/) |
+| Permission denied on a workspace action | — | Bring the exact error; this is an employer-managed account, so expect some limits | [30](/training-notes-site/notes/training-30/) |
+| Copilot "encountered an issue" | Needs a paid tier | Build visuals by hand | [32](/training-notes-site/notes/training-32/) |
+| "Can't load OneLake catalog" | No capacity at the time | Works once a capacity or trial is assigned | [32](/training-notes-site/notes/training-32/) |
+| `Incorrect syntax near '20'` | `LIMIT` in T-SQL | `SELECT TOP 20` | [32](/training-notes-site/notes/training-32/) |
+| DB missing from SQL servers list | Looking in the wrong blade | **SQL databases** | [32](/training-notes-site/notes/training-32/) |
+| VS Code: no way to run the `.sql` file | Command not discovered | Cmd/Ctrl+Shift+P → **MS SQL: Execute Query** | [32](/training-notes-site/notes/training-32/) |
+| Visual replaced instead of added | A visual was selected | Click empty canvas first | [32](/training-notes-site/notes/training-32/) |
+| Fields won't drag into wells | UI quirk | Tick checkboxes in the Data pane | [32](/training-notes-site/notes/training-32/) |
+| Measures overwritten / "only three show" | Not clicking **New measure** each time | Click New measure first | [33](/training-notes-site/notes/training-33/) |
+| `Login failed for user '<token-identified principal>'` / `Resource not found` | DB had been deleted | Restore from **Deleted databases** | [33](/training-notes-site/notes/training-33/) |
+| Restore stuck in Deploying | Restores are slower than new DBs | Wait, or create a new DB | [33](/training-notes-site/notes/training-33/) |
+| No Identity page | Looking at the DB or "SQL Server databases" | SQL **servers** → Security → Identity | [33](/training-notes-site/notes/training-33/) |
+| `principalId: null` after CLI | CLI update didn't apply | `az rest --method patch` with identity body | [33](/training-notes-site/notes/training-33/) |
+| KQL DB has no tables | Destination not materialized yet | KQL DB → Get data → existing eventstream | [33](/training-notes-site/notes/training-33/) |
+| `take operator failed` | `_` vs `-` in a name | Exact name, `['dashed-name']` | [33](/training-notes-site/notes/training-33/) |
+| `No default context exists` | No default lakehouse | Attach lakehouse → Set as default | [33](/training-notes-site/notes/training-33/) |
+| Semantic model: source tables don't exist | Created right after writing | Retry | [33](/training-notes-site/notes/training-33/) |
+| `SELECT *` looks empty/garbled | — | Huge JSONB payloads flood the terminal. Count instead: | [34](/training-notes-site/notes/training-34/) |
+| Access denied on create | Reused the **DMS** role ARN | Create a role that trusts Google (Step 3) | [34](/training-notes-site/notes/training-34/) |
+| `billingEnabled: false` for hours | — | Billing quota; use an existing billed project or request an increase early | [34](/training-notes-site/notes/training-34/) |
+| "Billing must be enabled" on `services enable` | — | Same as above | [34](/training-notes-site/notes/training-34/) |
+| Quota project mismatch warning | — | `gcloud auth application-default set-quota-project` | [34](/training-notes-site/notes/training-34/) |
+| `No stations found` (Beam) | — | Match the parser to the real JSON layout | [34](/training-notes-site/notes/training-34/) |
+| Job "stuck" at start | — | Normal worker startup; wait 2–3 minutes | [35](/training-notes-site/notes/training-35/) |
+| `newest_station() missing ... 'b'` | — | One-argument combine function (iterable) | [35](/training-notes-site/notes/training-35/) |
+| Fact table empty | — | Status data hadn't been moved to Silver/Gold yet | [35](/training-notes-site/notes/training-35/) |
+| Malformed gcloud commands | — | Wrong terminal; env vars missing | [35](/training-notes-site/notes/training-35/) |
+| Hourly query all zeros | — | Epoch-zero timestamps, too few snapshots | [35](/training-notes-site/notes/training-35/) |
+| Looker "Invalid dimension" on map | — | `"lat,lon"` text → refresh fields → Geo type → recreate chart | [35](/training-notes-site/notes/training-35/) |
